@@ -2,9 +2,11 @@
 
 [中文](README.md) | English
 
-termhub makes terminals on Windows PCs available in a browser. Use it to manage sessions across several machines, read output on your phone, run commands, or continue a Claude Code or Codex conversation.
+**Use Codex CLI, Claude Code, and other terminal-based CLI agents in your browser, with file uploads and downloads, text and image pasting, and copying text from the terminal.**
 
-Terminal processes run on the Windows node. Closing the browser or losing its connection leaves sessions running under the node's session host. You can reconnect later. Shutting down the node or exiting the terminal process ends the session.
+Leave a CLI agent running on your PC, then open a browser on another computer or your phone to read its output, send instructions, and transfer files. Sessions from several Windows PCs can be managed in one place.
+
+termhub forwards the existing terminal. Sessions still run on your Windows PC, using the same CLI, account, and working directory.
 
 ## Features
 
