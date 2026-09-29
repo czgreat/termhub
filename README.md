@@ -2,7 +2,7 @@
 
 中文 | [English](README.en.md)
 
-**把终端里的 Codex CLI、Claude Code 和其他 CLI Agent 转到浏览器里使用，支持文件上传、下载，以及文字和图片的粘贴、终端文字的复制。**
+**把终端里的 Claude Code、Codex CLI 和其他 CLI Agent 转到浏览器里使用，支持文件上传、下载，以及文字和图片的粘贴、终端文字的复制。**
 
 支持电脑浏览器、手机浏览器，也支持安装为 PWA。可以查看输出、发送指令、传输文件，在同一个页面里管理多台 Windows 电脑上的会话。
 
@@ -29,7 +29,7 @@ termhub 不修改官方 CLI，也不代替它们的安装、登录或订阅。
 
 ## 安装
 
-需要一台运行 Hub 的 Linux 主机，以及至少一台作为节点的 Windows 电脑。Hub 的安装说明使用 Docker 和 Compose；Windows 节点使用 PowerShell 7。
+需要一台运行 Hub 的 Linux 主机，以及至少一台作为节点的 Windows 电脑。Hub 的安装说明使用 Docker 和 Compose；Windows 节点使用 PowerShell 7（MSI 版，`pwsh.exe`），不用系统自带的 Windows PowerShell 5.1。
 
 v0.1.0 是首个发行版本。发布后可在 [Releases](https://github.com/czgreat/termhub/releases) 下载：
 
@@ -48,7 +48,7 @@ ARM64 包尚未在 ARM 真机验收。发布包未签名，请核对来源和同
 如果你使用的 Agent 能读取仓库并执行命令，可以把下面这段发给它。部署过程中，账号创建、凭据输入和官方 CLI 登录仍需你本人完成。
 
 ```text
-请帮我部署 termhub。先读取 https://github.com/czgreat/termhub/blob/main/docs/AGENT-DEPLOY.md 及其引用的安装文档；若无法访问，请告诉我并等待我提供文件，不要猜测步骤。确认目标主机、Windows 用户、访问地址、安装版本，以及是首次安装还是升级；优先使用该版本的发布包，没有可用包时再说明源码构建方案。按所选版本的文档执行，在已有安装上操作前说明影响并取得确认。不要让我在聊天中提供密码或令牌，不修改官方 CLI 的配置和登录；需要我输入凭据时停下来交给我。完成后报告版本、节点状态、已验证的项目和未完成事项。
+请帮我部署 termhub。先读取 https://github.com/czgreat/termhub/blob/main/docs/AGENT-DEPLOY.md 及其引用的安装文档；若无法访问，请告诉我并等待我提供文件，不要猜测步骤。Windows 上的 PowerShell 命令和安装脚本必须使用 PowerShell 7（MSI 版，pwsh.exe），不要使用 Windows PowerShell 5.1；先检查版本，缺少时经我确认后安装。确认目标主机、Windows 用户、访问地址、安装版本，以及是首次安装还是升级；优先使用该版本的发布包，没有可用包时再说明源码构建方案。按所选版本的文档执行，在已有安装上操作前说明影响并取得确认。不要让我在聊天中提供密码或令牌，不修改官方 CLI 的配置和登录；需要我输入凭据时停下来交给我。完成后报告版本、节点状态、已验证的项目和未完成事项。
 ```
 
 ## 运行方式与限制

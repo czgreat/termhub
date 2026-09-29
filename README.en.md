@@ -2,7 +2,7 @@
 
 [中文](README.md) | English
 
-**Use Codex CLI, Claude Code, and other terminal-based CLI agents in your browser, with file uploads and downloads, text and image pasting, and copying text from the terminal.**
+**Use Claude Code, Codex CLI, and other terminal-based CLI agents in your browser, with file uploads and downloads, text and image pasting, and copying text from the terminal.**
 
 Use it in a desktop browser or a mobile browser, or install it as a PWA. Read output, send instructions, transfer files, and manage sessions from several Windows PCs in one place.
 
@@ -29,7 +29,7 @@ These screenshots use fictional machines, projects, and conversations. The mobil
 
 ## Installation
 
-You need a Linux host for the Hub and at least one Windows PC as a node. The Hub installation guides use Docker and Compose; Windows nodes use PowerShell 7.
+You need a Linux host for the Hub and at least one Windows PC as a node. The Hub installation guides use Docker and Compose; Windows nodes require PowerShell 7 installed via MSI (`pwsh.exe`), not the built-in Windows PowerShell 5.1.
 
 v0.1.0 is the first release. Once published, packages are available from [Releases](https://github.com/czgreat/termhub/releases):
 
@@ -48,7 +48,7 @@ The ARM64 package has not been tested on ARM hardware. Packages are unsigned; ve
 If your agent can read repositories and run commands, give it the prompt below. You will still need to create accounts, enter credentials, and sign in to the official CLIs yourself. The linked deployment instructions are in Chinese.
 
 ```text
-Help me deploy termhub. First read https://github.com/czgreat/termhub/blob/main/docs/AGENT-DEPLOY.md and its linked installation guides. If you cannot access them, tell me and wait for me to provide the files; do not guess the steps. Confirm the target hosts, Windows user, access URL, version, and whether this is a new installation or an upgrade. Prefer packages for that version; explain the source-build option if no suitable package is available. Follow the documentation for the selected version. Before modifying an existing installation, explain the impact and obtain my confirmation. Do not ask me to paste passwords or tokens into chat, and do not alter official CLI configuration or login settings. Pause when I need to enter credentials. Finish by reporting versions, node status, completed checks, and anything left unfinished.
+Help me deploy termhub. First read https://github.com/czgreat/termhub/blob/main/docs/AGENT-DEPLOY.md and its linked installation guides. If you cannot access them, tell me and wait for me to provide the files; do not guess the steps. On Windows, run PowerShell commands and installation scripts with PowerShell 7 installed via MSI (pwsh.exe), not Windows PowerShell 5.1. Check the version first; if it is missing, ask before installing it. Confirm the target hosts, Windows user, access URL, version, and whether this is a new installation or an upgrade. Prefer packages for that version; explain the source-build option if no suitable package is available. Follow the documentation for the selected version. Before modifying an existing installation, explain the impact and obtain my confirmation. Do not ask me to paste passwords or tokens into chat, and do not alter official CLI configuration or login settings. Pause when I need to enter credentials. Finish by reporting versions, node status, completed checks, and anything left unfinished.
 ```
 
 ## How it runs and current limitations

@@ -38,6 +38,10 @@
 4. 浏览器会用哪些地址访问 Hub。通常是 `https://<Docker 主机局域网地址>:27443`。
 5. 每台电脑上要用哪些 CLI（PowerShell、Claude Code、Codex），是否已经装好并登录。
 
+## Windows 的 PowerShell 要求
+
+所有 Windows 节点使用 PowerShell 7 MSI 版（`pwsh.exe`），不用系统自带的 Windows PowerShell 5.1（`powershell.exe`）。安装、升级、卸载脚本均在 PowerShell 7 中运行。先执行 `pwsh.exe -NoProfile -Command '$PSVersionTable.PSVersion'` 确认主版本至少为 7；若未安装，说明原因并经用户确认后安装，再继续。远程执行也应明确调用 `pwsh.exe`，不要依赖默认 shell。源码构建用到的 `.sh` 脚本仍按下文使用 Git Bash。
+
 ## 选择版本和安装方式
 
 先确认是首次安装还是升级，以及用户要安装的版本。以下编号步骤描述首次安装；已有安装按[发布包安装说明](发布包安装.md)的“更新与回滚”或[部署指南](部署指南.md)的升级章节处理，不重新初始化、登记或覆盖原数据。
@@ -104,13 +108,13 @@ go vet ./cmd/termhub ./internal/hub/... ./internal/proto
 
 1. 请用户在网页“⚙ 管理 → 节点”里添加节点，把显示出来的登记命令交给**那台电脑上的操作者**。这个操作者可以是你（如果你能在那台电脑上执行命令），也可以是用户本人。令牌只显示一次，也只用于这一台。
 2. 把 `dist/termhub-agent.exe` 和 `deploy/install-agent.ps1`、`deploy/upgrade-agent.ps1`、`deploy/uninstall-agent.ps1` 放到那台电脑的同一个文件夹里。
-3. 以要使用的那个 Windows 用户身份，在普通（不提权）的 PowerShell 窗口里运行：
+3. 以要使用的那个 Windows 用户身份，在普通（不提权）的 PowerShell 7（pwsh.exe）窗口里运行：
    ```powershell
    Set-ExecutionPolicy -Scope Process Bypass
    .\install-agent.ps1 -Hub <节点可访问的完整HTTPS地址，例如https://192.168.1.10:27443> -Pin <cert_fingerprint>
    ```
    脚本会提示粘贴节点令牌。
-4. 要不要开机自启（不需要有人登录）由用户决定。要的话加 `-AtStartup`，安装账号本身须属于管理员组，并在同一用户“以管理员身份运行”的 PowerShell 里执行；不要换成另一个管理员身份；Windows 会让用户本人输入密码，你不要代填。那台电脑上已有 termhub 任务（另一个 Windows 用户装过）时，加 `-TaskName termhub-agent-<用户名>`。
+4. 要不要开机自启（不需要有人登录）由用户决定。要的话加 `-AtStartup`，安装账号本身须属于管理员组，并在同一用户“以管理员身份运行”的 PowerShell 7（pwsh.exe）里执行；不要换成另一个管理员身份；Windows 会让用户本人输入密码，你不要代填。那台电脑上已有 termhub 任务（另一个 Windows 用户装过）时，加 `-TaskName termhub-agent-<用户名>`。
 5. 成功的标志是网页“管理 → 节点”里这台电脑显示“在线”。
 
 失败时看 `%LOCALAPPDATA%\termhub\agent\logs\agent.log`，常见原因有三个：
