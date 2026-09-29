@@ -1,7 +1,7 @@
 # 给 AI 代理的 termhub 部署说明
 
 > 读者：受用户委托、帮他部署 termhub 的 AI 编程代理（Claude Code、Codex 等）。
-> 用户把 README 里的一段话发给你，你就读到了这里。请从头到尾按顺序执行。
+> 用户把 README 里的一段话发给你，你就读到了这里。先确定安装方式，再执行相应步骤。
 > 本文只讲部署。要改代码，请读仓库根目录的 `AGENTS.md`。
 
 ## 你的任务
@@ -21,7 +21,7 @@
    - termhub 管理员密码；
    - TOTP 动态码和恢复码；
    - CLI 的 API 密钥或登录。
-2. `setup_token` 只转告用户，由他在浏览器里用。节点令牌 `thn_…` 长期有效，等同于这台节点的密码：最好让操作那台电脑的人在 `install-agent.ps1` 的提示里自己粘贴；你必须经手时，不要写进任何文件或提交，用完提醒用户可以在“管理 → 节点 → 换令牌”里轮换。
+2. `setup_token` 和节点令牌均不要贴进聊天。请用户在自己的终端查看初始化令牌，在浏览器完成初始化；节点令牌由用户直接粘贴到安装脚本的交互提示中。不要把令牌写入命令行、代理日志或仓库。节点令牌长期有效，应按密码保管。
 3. 不要把 27443 端口发布到公网，也不要替用户改路由器、防火墙或 DNS。用户要外网访问时，只按部署指南第 6 节给出建议，由他决定。
 4. 不修改官方 CLI（Claude Code、Codex），也不动它们的登录方式、配置和历史文件。
 5. 不要改用户机器上与 termhub 无关的东西。遇到已有的 `~/termhub` 目录、已存在的计划任务 `termhub-agent`、端口被占用，先停下来问用户。
@@ -38,6 +38,17 @@
 4. 浏览器会用哪些地址访问 Hub。通常是 `https://<Docker 主机局域网地址>:27443`。
 5. 每台电脑上要用哪些 CLI（PowerShell、Claude Code、Codex），是否已经装好并登录。
 
+## 选择版本和安装方式
+
+先确认是首次安装还是升级，以及用户要安装的版本。以下编号步骤描述首次安装；已有安装按[发布包安装说明](发布包安装.md)的“更新与回滚”或[部署指南](部署指南.md)的升级章节处理，不重新初始化、登记或覆盖原数据。
+
+优先检查所选版本是否有匹配平台的正式发布包。下载前确认来源，下载后核对同一 Release 的 SHA256SUMS.txt。草稿或私有仓库无法访问时，请用户提供所需文件或在自己的环境授权访问，不索要令牌、不假定包已发布。
+
+- **发布包安装**：按[发布包安装说明](发布包安装.md)部署 Hub，跳过下文第 2–4 步；不要求 Go、Node.js 或源码测试。随后执行第 5–8 步。第 6 步所需 exe 和三个脚本来自 Windows 发布包的解压目录，不是 `dist/`。
+- **源码安装**：执行第 2–4 步。获取用户选定的 tag 或完整提交，确认工作区版本，再按该版本的文档操作，不默认部署不断变化的 main。
+
+README 链接用于发现文档；选定版本后，以该 tag / 提交对应的文档为准。无法读取文档时说明缺少什么，等待用户提供，不自行猜测命令。
+
 ## 第 2 步：检查构建机
 
 ```bash
@@ -52,6 +63,7 @@ git --version && go version && node --version && npm --version
 
 ```bash
 git clone https://github.com/czgreat/termhub.git termhub && cd termhub
+# 先 checkout 用户选定的 tag 或完整提交，并确认 git rev-parse HEAD。
 cd web && npm ci && npm run build && npm run test:unit && cd ..
 go vet ./cmd/termhub ./internal/hub/... ./internal/proto
 ```
@@ -69,13 +81,13 @@ go vet ./cmd/termhub ./internal/hub/... ./internal/proto
    - `TH_PUBLIC_URL`：浏览器访问的地址。
 3. 再运行一次。
 4. 成功的标志是输出 `health: healthy`。
-5. 从输出里找到 `setup_token` 和 `cert_fingerprint`：
+5. 请用户在自己的终端查看初始化输出中的 `setup_token` 和 `cert_fingerprint`，避免把包含令牌的完整日志复制到代理输出：
    - 指纹可以告诉用户，并记住它，第 6 步要用。
-   - `setup_token` 只告诉用户，让他自己在浏览器里用。
+   - `setup_token` 由用户本人在浏览器里输入，不转贴到聊天。
 
 失败时：
 
-- 看 `docker logs termhub` 的最后几十行。
+- 请用户查看 `docker logs termhub` 的最后几十行；分享错误前移除初始化令牌等敏感内容。
 - 最常见的原因是 `TH_PUBLIC_URL` 没填或格式不对，以及端口被占用。
 
 ## 第 5 步：用户创建管理员（交给用户）
@@ -95,7 +107,7 @@ go vet ./cmd/termhub ./internal/hub/... ./internal/proto
 3. 以要使用的那个 Windows 用户身份，在普通（不提权）的 PowerShell 窗口里运行：
    ```powershell
    Set-ExecutionPolicy -Scope Process Bypass
-   .\install-agent.ps1 -Hub <TH_PUBLIC_URL 里的局域网地址> -Pin <cert_fingerprint>
+   .\install-agent.ps1 -Hub <节点可访问的完整HTTPS地址，例如https://192.168.1.10:27443> -Pin <cert_fingerprint>
    ```
    脚本会提示粘贴节点令牌。
 4. 要不要开机自启（不需要有人登录）由用户决定。要的话加 `-AtStartup`，安装账号本身须属于管理员组，并在同一用户“以管理员身份运行”的 PowerShell 里执行；不要换成另一个管理员身份；Windows 会让用户本人输入密码，你不要代填。那台电脑上已有 termhub 任务（另一个 Windows 用户装过）时，加 `-TaskName termhub-agent-<用户名>`。

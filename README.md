@@ -1,111 +1,89 @@
 # termhub
 
-在浏览器和手机上使用局域网里多台 Windows 电脑上的终端，以及跑在终端里的 AI 编程 CLI（Claude Code、Codex 等）。官方 CLI 一行不改，termhub 只在终端这一层工作。
+中文 | [English](README.en.md)
 
-*Use the terminals — and the AI coding CLIs running in them (Claude Code, Codex, …) — of several Windows PCs on your LAN from a browser or a phone. The official CLIs are not modified; termhub works at the terminal level. English summary at the end.*
+termhub 把 Windows 电脑上的终端放到浏览器里。可以在电脑上管理多台机器的会话，也可以用手机查看输出、输入命令，或继续 Claude Code、Codex 的对话。
 
-## 能做什么
+终端进程运行在 Windows 节点上。浏览器关闭或断网后，会话仍由节点上的宿主进程维持；重新连接后可以继续使用。节点关机或终端进程退出则会结束会话。
 
-- **会话不怕断**：会话跑在那台 Windows 上。关掉浏览器、断网、换设备都不影响，重新打开接着看、接着用。
-- **多台机器、多个会话**：侧栏按机器分组，支持标签和分屏。状态点显示哪个会话在干活、哪个做完了、哪个在等你选择。
-- **手机友好**：可以装成 PWA。底部有输入框，程序给出的选项会变成可以点的卡片，往上翻看后一点就回到底部。
-- **历史对话**：按项目文件夹列出 Claude Code 和 Codex 的历史对话，可以只读查看，也可以接着继续（只读取官方历史文件，从不修改）。
-- **文件**：粘贴或拖入图片和文件会上传到那台电脑；点终端里的路径就能下载，文件夹打包成 zip。
-- **花费与上下文**：每个 AI 会话按官方价格折算美元，并显示上下文占用。管理员可以改价格表。
-- **账号安全**：密码加 TOTP 两步验证（强制），支持受信任设备和恢复码，登录有限速，重要操作有审计记录。节点只认 Hub 证书的指纹。
+## 功能
 
-## 架构
+- 按机器排列会话，支持标签页和分屏。
+- 查看 Claude Code、Codex 的历史对话，按项目文件夹查找并继续会话。官方历史文件只读。
+- 上传图片和文件，下载文件或将文件夹打包下载。
+- 手机浏览器和 PWA，提供输入框及可点击的终端选项。
+- 显示会话状态、上下文用量和估算费用；费用不是实际账单。
+- 密码与 TOTP 登录，支持恢复码、受信任设备及操作审计。
 
-```
-浏览器 / 手机 PWA
-    │  HTTPS + WebSocket
-    ▼
-Hub（Go 单程序，内嵌网页和 SQLite；Linux 上用 Docker 跑，也可以直接运行）
-    ▲  节点主动连 Hub（HTTPS，只认 Hub 证书指纹）
-    │
-每台 Windows 上的 termhub-agent
-    └─ 会话宿主 ─ ConPTY ─ pwsh / Claude Code / Codex …
-```
+termhub 不修改官方 CLI，也不代替它们的安装、登录或订阅。
 
-- Hub 负责账号、网页、节点登记和会话转发，不保存终端内容。
-- agent 以登记时那个 Windows 用户的身份运行。CLI 的登录状态、PATH、配置目录都和那个用户平时用的一样。
-- 会话宿主和 agent 是两个进程，升级或重启 agent 时正在跑的会话不会断。
+## 界面
 
-## 界面预览
-
-以下为真实网页界面，使用虚构的机器、项目和对话数据；没有连接真实节点或 AI 服务。
+截图使用虚构的机器、项目和对话数据。手机截图来自浏览器模拟。
 
 ![桌面终端与机器列表](docs/images/desktop.png)
 
-<img src="docs/images/mobile.png" alt="手机上的历史对话" width="390">
+<img src="docs/images/mobile.png" alt="手机历史对话页面" width="390">
 
-## 第一个版本
+## 安装
 
-v0.1.0 是第一个对外发行版本。下载 [Release](https://github.com/czgreat/termhub/releases) 中的预编译包，按 [发布包安装说明](docs/发布包安装.md) 操作，无需安装 Go 或 Node.js。源码部署见下文。
+需要一台运行 Hub 的 Linux 主机，以及至少一台作为节点的 Windows 电脑。Hub 的安装说明使用 Docker 和 Compose；Windows 节点使用 PowerShell 7。
 
-- Linux Hub：amd64、arm64；ARM64 包交叉编译，尚未做 ARM 真机验收。
-- Windows agent：amd64，附安装、升级、卸载脚本。
-- 默认在 Windows 用户登录后启动；需要无人登录也在线，请选择安装脚本的 `-AtStartup`。两者不是同一种启动方式。
-- 包未做代码签名，下载后请核对同一 Release 的 SHA256SUMS.txt。
+v0.1.0 是首个发行版本。发布后可在 [Releases](https://github.com/czgreat/termhub/releases) 下载：
 
-## 部署
+| 程序 | 平台 |
+| --- | --- |
+| Hub | Linux amd64 / arm64 |
+| agent | Windows amd64 |
 
-### 方式一：让 AI 代理帮你部署
+- **使用发布包**：按[发布包安装说明](docs/发布包安装.md)操作，无需 Go 或 Node.js。
+- **从源码构建**：见[部署指南](docs/部署指南.md)，需要 Go 1.27+、Node.js 22.13+。
 
-把下面这段复制给 Claude Code、Codex 或其他能执行命令的 AI 代理，它会先读仓库里的部署说明，问清你的环境，然后一步步做。需要输入密码、确认或在浏览器里操作的地方，它会停下来交给你。
+ARM64 包尚未在 ARM 真机验收。发布包未签名，请核对来源和同一 Release 的 SHA256SUMS.txt。
+
+### 交给 Agent 部署
+
+如果你使用的 Agent 能读取仓库并执行命令，可以把下面这段发给它。部署过程中，账号创建、凭据输入和官方 CLI 登录仍需你本人完成。
 
 ```text
-请阅读 https://github.com/czgreat/termhub/blob/main/docs/AGENT-DEPLOY.md ，严格按照其中的步骤和安全规则帮我部署 termhub。先问清楚我的环境，再一步步执行；需要密码、确认或在浏览器里操作的地方停下来交给我。
+请帮我部署 termhub。先读取 https://github.com/czgreat/termhub/blob/main/docs/AGENT-DEPLOY.md 及其引用的安装文档；若无法访问，请告诉我并等待我提供文件，不要猜测步骤。确认目标主机、Windows 用户、访问地址、安装版本，以及是首次安装还是升级；优先使用该版本的发布包，没有可用包时再说明源码构建方案。按所选版本的文档执行，在已有安装上操作前说明影响并取得确认。不要让我在聊天中提供密码或令牌，不修改官方 CLI 的配置和登录；需要我输入凭据时停下来交给我。完成后报告版本、节点状态、已验证的项目和未完成事项。
 ```
 
-### 方式二：自己动手
+## 运行方式与限制
 
-见 [docs/部署指南.md](docs/部署指南.md)。大致步骤：
+浏览器通过 HTTPS / WebSocket 连接 Hub，Windows agent 主动连接 Hub。Hub 提供网页、账号管理和会话转发；节点上的会话宿主持有终端进程。结构见[架构说明](docs/架构.md)。
 
-1. 准备一台装有 Docker 的 Linux 主机（NAS、小主机都行），在构建机上装好 Go 1.27+ 和 Node.js 22.13+。
-2. 运行 `bash deploy/release.sh user@主机`。第一次运行会在目标主机的 `~/termhub` 里生成 `.env` 和 `hub.env`，填好地址后再运行一次：它会构建网页、Hub 和 Windows agent，再在目标主机上构建镜像并启动。
-3. 浏览器打开 `https://主机:27443`，用日志里的一次性令牌创建第一个管理员，绑定 TOTP。
-4. 在“管理 → 节点”里添加节点，把 `termhub-agent.exe` 和 `deploy/install-agent.ps1`、`deploy/upgrade-agent.ps1`、`deploy/uninstall-agent.ps1` 拷到那台 Windows 上运行。
-5. 在“管理 → CLI 配置”里用模板给节点加上 PowerShell、Claude Code、Codex，然后绑定给用户。
+- 节点目前只支持 Windows，不支持 Linux 或 macOS 节点。网页界面目前以中文为主。
+- 默认在 Windows 用户登录后延迟 3 分钟启动 agent。无人登录也需在线时，按安装文档配置 `-AtStartup`；必须使用同一个具备管理员权限的安装账号。
+- 升级 agent 的连接进程不会更新已运行的会话宿主。宿主更新需另行安排结束会话和重启。
+- 本版使用脚本安装和升级，没有自动升级或托盘程序。
+- iPhone、Android 真机的完整验收尚未完成。
 
-## 现状与限制
+## 访问权限与备份
 
-- **节点目前只支持 Windows**：agent 基于 Windows 的 ConPTY、计划任务和 DPAPI 实现。Linux（Ubuntu、Debian 等）和 macOS 节点还没有做。Hub 本身在 Linux 上运行，不受影响。
-  - 协议（`internal/proto`）和 Hub 与平台无关，加 Linux 节点主要是写一个基于 pty 的会话宿主和 agent。
-  - 欢迎提交合并请求。
-- 网页和大部分文档是中文。
-- 本版通过脚本安装和升级；不含自动升级、托盘程序或出口 IP 监控。
-- 手机截图来自浏览器模拟；iPhone、Android 真机的完整验收尚未完成。
-- 花费显示按官方公开价格估算，不是账单。
+将节点上的 CLI 配置绑定给某个用户，意味着该用户可以访问节点运行账号有权访问的文件。它不提供文件系统隔离，请只授权可信用户。
 
-## 安全提示
-
-- 27443 端口只应在局域网内可达。要从外网访问，请放在带 HTTPS 的反代或隧道后面（见 [安全说明](docs/安全说明.md)），不要把 27443 直接暴露到公网。
-- 把某个 CLI 配置绑定给某个用户，就等于允许他通过网页访问那台机器上那个 Windows 用户能访问的全部文件。**绑定不是安全隔离**，只绑给你信任的人。
-- `data/` 目录里有数据库、主密钥和证书，请整个备份。丢了 `master.key`，TOTP 密钥和配置里的密文就无法解开。
+Hub 的 27443 端口应限制在局域网内；外网访问按[安全说明](docs/安全说明.md)配置 HTTPS 反向代理或隧道。备份时保留整个 `data/` 目录，包括数据库、主密钥和证书。
 
 ## 开发
 
-- 需要 Go 1.27+、Node.js 22.13+。Windows 专属的包只能在 Windows 上编译和测试。
-- 网页：`cd web && npm ci && npm run build`（产物嵌入 Hub，编译 Hub 前必须先构建网页）、`npm run check`、`npm run test:unit`。
-- Go：`go vet ./...`、`go test ./...`。`test/e2e` 会起本地 Hub、假节点和 Playwright 浏览器，全程用假 CLI（`tools/testcli`），不需要任何账号或密钥。
-- 实现结构见 [架构说明](docs/架构.md)。给 AI 代理的开发须知在 [AGENTS.md](AGENTS.md)。
+网页在 `web/`，Hub 在 `internal/hub/`，节点在 `internal/agent/`。构建 Hub 前需要构建网页：
+
+```sh
+cd web
+npm ci
+npm run build
+npm run check
+npm run test:unit
+cd ..
+go test ./...
+```
+
+完整 Go 测试需在 Windows 上执行，包含使用假 CLI 的浏览器端到端测试。开发约定见 [AGENTS.md](AGENTS.md)。
 
 ## 许可
 
-[MIT](LICENSE)。借用的上游代码和随程序分发的依赖见 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
-
----
-
-## English summary
-
-termhub lets you reach the terminals of several Windows PCs on your LAN from a browser or phone, with first-class support for AI coding CLIs (Claude Code, Codex). A Go **Hub** (single binary with the web UI and SQLite embedded, usually run in Docker on a Linux box) talks to a **termhub-agent** on each Windows PC, which hosts ConPTY sessions that survive browser disconnects and agent restarts. Features: tabs and split panes, session status dots, a mobile PWA with tappable option cards, read-only browsing and resuming of CLI history, file upload and download, per-session cost and context estimates, and mandatory TOTP.
-
-- Let an AI agent deploy it: paste the prompt above (it points the agent at [docs/AGENT-DEPLOY.md](docs/AGENT-DEPLOY.md)).
-- Manual deployment: [docs/部署指南.md](docs/部署指南.md) (Chinese; commands are self-explanatory).
-- Nodes are Windows-only for now (ConPTY, Task Scheduler, DPAPI); Linux/macOS nodes are not implemented — pull requests welcome. The Hub runs on Linux.
-- The UI and most docs are in Chinese.
-- License: MIT.
+[MIT](LICENSE)。第三方依赖许可见 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES)。
 
 ## 友情链接
 
