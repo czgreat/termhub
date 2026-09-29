@@ -106,3 +106,7 @@ termhub lets you reach the terminals of several Windows PCs on your LAN from a b
 - Nodes are Windows-only for now (ConPTY, Task Scheduler, DPAPI); Linux/macOS nodes are not implemented — pull requests welcome. The Hub runs on Linux.
 - The UI and most docs are in Chinese.
 - License: MIT.
+
+## 友情链接
+
+- [LINUX DO 社区](https://linux.do/)
