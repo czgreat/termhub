@@ -4,7 +4,7 @@
 
 **Use Codex CLI, Claude Code, and other terminal-based CLI agents in your browser, with file uploads and downloads, text and image pasting, and copying text from the terminal.**
 
-Leave a CLI agent running on your PC, then open a browser on another computer or your phone to read its output, send instructions, and transfer files. Sessions from several Windows PCs can be managed in one place.
+Use it in a desktop browser or a mobile browser, or install it as a PWA. Read output, send instructions, transfer files, and manage sessions from several Windows PCs in one place.
 
 termhub forwards the existing terminal. Sessions still run on your Windows PC, using the same CLI, account, and working directory.
 
