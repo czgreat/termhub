@@ -1,0 +1,43 @@
+# termhub Hub (docs/M8 第 7 节). deploy/release.sh copies this file next to
+# .env and hub.env on the Docker host, builds the image there and runs it.
+#
+# Browsers and agents use https://<TH_BIND_ADDR>:27443 with the Hub's
+# self-signed certificate; agents only trust its fingerprint. To reach the Hub
+# from the internet put an HTTPS reverse proxy or tunnel in front of the
+# plain-HTTP proxy listener (hub.env.example, docs/M8 第 5–8 节); never
+# publish 27443 to the internet.
+
+services:
+  termhub:
+    image: localhost/termhub:${TERMHUB_VERSION:-dev}
+    container_name: termhub
+    restart: unless-stopped
+    # Runs as the user that owns ./data (release.sh fills .env), so the
+    # database and keys stay that user's files; never root.
+    user: "${TERMHUB_UID:-65532}:${TERMHUB_GID:-65532}"
+    # Bound to one LAN address: a port published on every interface can reach
+    # the internet through the host's public IPv6.
+    ports:
+      - "${TH_BIND_ADDR:?set TH_BIND_ADDR in .env to this host's LAN address}:27443:27443"
+      # With a reverse proxy on another machine, also publish the proxy
+      # listener, again on one address only:
+      # - "${TH_BIND_ADDR}:27180:27180"
+    env_file: ./hub.env
+    environment:
+      TZ: "${TZ:-UTC}"
+    volumes:
+      # Holds the database, the master key and the certificate. Back it up as a
+      # whole: without master.key the TOTP secrets and profile secrets are lost.
+      - ./data:/data
+    healthcheck:
+      # no shell or curl in the image; the binary checks itself.
+      test: ["CMD", "/termhub", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+# First start: the one-time setup token and the certificate fingerprint are in
+# the log:
+#   docker logs termhub
+# TOTP needs a correct clock: keep time synchronisation on the host enabled.

@@ -1,0 +1,13 @@
+.git
+web/node_modules
+web/test-results
+web/playwright-report
+internal/hub/web/dist/*
+!internal/hub/web/dist/.gitkeep
+dist
+bin
+data
+deploy/.env
+deploy/hub.env
+.env
+hub.env

@@ -1,0 +1,44 @@
+# build outputs
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# web
+/web/node_modules/
+/web/dist/
+/web/test-results/
+/web/playwright-report/
+
+# local state and secrets
+*.key
+*.pem
+*.sig
+agent.yaml
+/data/
+
+# editors and OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# built front end, embedded into the Hub; produced by `npm run build` in web/
+/internal/hub/web/dist/*
+!/internal/hub/web/dist/.gitkeep
+/web/check_claude*
+
+# screenshots left by the check scripts
+web/*.png
+
+# Claude Code local worktrees and settings
+.claude/
+
+# Python test helpers
+__pycache__/
+*.py[cod]
+
+# deployment settings with secrets (deploy/.env.example, deploy/hub.env.example)
+.env
+hub.env

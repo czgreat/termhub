@@ -1,0 +1,19 @@
+# termhub Hub image from a binary built elsewhere (docs/M8 第 7 节, "交付形式").
+# The Docker host cannot be counted on to reach any registry, so this pulls
+# nothing at all: the build context (made by deploy/release.sh) holds the statically
+# linked `termhub` (GOOS=linux CGO_ENABLED=0, front end and time zone data
+# embedded), the passwd/group lines for the unprivileged user and an empty
+# data directory. The image is just that on scratch: no shell, no package
+# manager, nothing to update.
+#
+#   docker build -t localhost/termhub:<version> .
+FROM scratch
+COPY etc/passwd /etc/passwd
+COPY etc/group /etc/group
+COPY --chown=65532:65532 data /data
+COPY termhub /termhub
+ENV TH_DATA_DIR=/data
+VOLUME /data
+EXPOSE 27443 27180
+USER nonroot
+ENTRYPOINT ["/termhub"]

@@ -1,0 +1,35 @@
+{
+  "name": "termhub-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node -e \"require('fs').writeFileSync('../internal/hub/web/dist/.gitkeep','')\"",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "icons": "node tools/make-icons.mjs",
+    "test": "playwright test",
+    "test:unit": "node --import ./tests/unit/register.mjs --test \"tests/unit/*.test.mjs\""
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tsconfig/svelte": "^5.0.0",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "@xterm/addon-clipboard": "^0.2.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-unicode-graphemes": "^0.4.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "qrcode-generator": "^2.0.4"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}
