@@ -1,5 +1,3 @@
-//go:build windows
-
 package fs
 
 import (
@@ -51,10 +49,7 @@ func PlanZip(path string, opt Options) (*ZipPlan, error) {
 	if !fi.IsDir() {
 		return nil, fail(CodeNotDirectory, "not a folder")
 	}
-	p := &ZipPlan{Root: clean, Name: filepath.Base(clean) + ".zip", planned: map[string]os.FileInfo{}}
-	if len(clean) <= 3 { // a drive root has no base name
-		p.Name = strings.TrimSuffix(clean[:1], ":") + "-drive.zip"
-	}
+	p := &ZipPlan{Root: clean, Name: archiveName(clean), planned: map[string]os.FileInfo{}}
 	root := long(clean)
 	scanned := 0
 	err = filepath.WalkDir(root, func(full string, d fs.DirEntry, walkErr error) error {
@@ -151,7 +146,7 @@ func (p *ZipPlan) Write(w io.Writer) error {
 	}
 	for _, rel := range p.Files {
 		full := long(filepath.Join(p.Root, filepath.FromSlash(rel)))
-		f, err := os.Open(full)
+		f, err := os.OpenFile(full, readFlags, 0)
 		if err != nil {
 			skipped = append(skipped, rel+": "+errLabel(err))
 			continue

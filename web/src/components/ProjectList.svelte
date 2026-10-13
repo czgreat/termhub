@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { egressBlocked } from '../lib/egress'
+  import { egressClock, useEgressClock } from '../lib/egress-clock.svelte'
+  useEgressClock()
+  import EgressBadge from './EgressBadge.svelte'
   // Conversations by machine (docs/M10 第 3.5 节): every machine this user has
   // talked to, most recently used first. Closed, a machine shows its two newest
   // conversations; open, its folders and their conversations. A conversation
@@ -7,6 +11,7 @@
   // user's list only: nothing on the machine is changed or deleted.
   import { onMount, untrack } from 'svelte'
   import { app } from '../lib/state.svelte'
+  import { baseName } from '../lib/nodepath'
   import { hist, historyProfiles, load, loadAll, loadHidden, setHidden, setFolder, machines, shareGroups, convTitle, ago, fullTime, start,
     type Conv, type ConvRef, type Folder, type HiddenFolder } from '../lib/history.svelte'
 
@@ -173,6 +178,7 @@
           {#if m.loading}<span class="mspin" title="正在读取"></span>{/if}
           <span class="mago" title={m.updated ? '最近一次：' + fullTime(m.updated) : ''}>{m.updated ? ago(m.updated, hist.tick) : ''}</span>
         </button>
+        <EgressBadge status={app.nodes.find(n => n.id === m.nodeId)?.egress} />
 
         {#if !open}
           <div class="recent">
@@ -189,7 +195,7 @@
         {:else}
           <div class="mbody">
             {#each m.profiles.filter(p => p.my_folders?.length) as p}
-              <div class="scope" title={p.my_folders!.join('\n')} data-testid="history-scope">{m.profiles.length > 1 ? p.name + '：' : ''}只显示 {p.my_folders!.map(f => f.split('\\').pop() || f).join('、')}</div>
+              <div class="scope" title={p.my_folders!.join('\n')} data-testid="history-scope">{m.profiles.length > 1 ? p.name + '：' : ''}只显示 {p.my_folders!.map(baseName).join('、')}</div>
             {/each}
             {#each m.errors as err}<p class="note bad">{err} <button class="link" onclick={() => loadAll({ force: true })}>重试</button></p>{/each}
             {#each m.notes as n}<p class="note">{n}</p>{/each}
@@ -221,9 +227,9 @@
                   <div class="convs">
                     {#if f.cwd && !hist.query}
                       <div class="pacts">
-                        <button onclick={() => start(f.profileId, f.cwd, 'continue')} disabled={!m.online || !app.profiles.find(p => p.id === f.profileId)?.continue_cmd}
+                        <button onclick={() => start(f.profileId, f.cwd, 'continue')} disabled={egressBlocked(app.nodes.find(n => n.id === m.nodeId)?.egress, egressClock.now) || !m.online || !app.profiles.find(p => p.id === f.profileId)?.continue_cmd}
                           title="在这个文件夹里接着最近的对话" data-testid="project-continue">▶ 继续上次</button>
-                        <button onclick={() => start(f.profileId, f.cwd, 'new')} disabled={!m.online}
+                        <button onclick={() => start(f.profileId, f.cwd, 'new')} disabled={egressBlocked(app.nodes.find(n => n.id === m.nodeId)?.egress, egressClock.now) || !m.online}
                           title="在这个文件夹里开一个全新的对话" data-testid="project-new">＋ 新对话</button>
                       </div>
                     {/if}

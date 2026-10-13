@@ -41,7 +41,8 @@ export const del = <T = any>(path: string) => api<T>('DELETE', path)
 
 export type User = { id: number; username: string; display_name: string; role: string; status: string; totp_confirmed: boolean; must_change_password: boolean }
 export type Me = { user: User; csrf: string; reverified: boolean; pending: string[]; server_time: number }
-export type Node = { id: number; name: string; note: string; status: string; online: boolean; fingerprint_mismatch: boolean; agent_ver: string; host_ver: string; pwsh_store: boolean; position: number }
+export type Egress = { state: string; expected_ip: string; observed_ip?: string; checked_at: number; valid_until: number; epoch: number; allowed: boolean; reason: string }
+export type Node = { egress?: Egress; id: number; name: string; note: string; status: string; online: boolean; fingerprint_mismatch: boolean; agent_ver: string; host_ver: string; pwsh_store: boolean; position: number }
 export type Profile = { id: number; node_id: number; name: string; kind: string; mode: string; shell_path: string; shell_args: string[]; command: string; args: string[]; resume_cmd: string; continue_cmd: string; my_folders?: string[]; env?: Record<string, string>; default_cwd: string; idle_timeout: number; quote_style: string; status: string }
 export type Session = { sid: string; node_id: number; profile_id: number; profile_name: string; kind: string; owner_id: number; cwd: string; title: string; created_at: number; ended_at: number; end_reason: string; exit_code: number | null; conv_id?: string }
 export type Entry = { name: string; dir: boolean; link?: boolean; size: number; modified: number; hidden?: boolean }

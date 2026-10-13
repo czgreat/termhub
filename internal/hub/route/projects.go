@@ -13,6 +13,7 @@ import (
 // in it can be edited; nothing here is special-cased anywhere else, so a new
 // CLI needs no code, only a profile.
 type Template struct {
+	OS          string   `json:"os,omitempty"` // "linux" for Linux nodes; empty: Windows
 	Kind        string   `json:"kind"`
 	Name        string   `json:"name"`
 	Mode        string   `json:"mode"`
@@ -46,6 +47,21 @@ var Templates = []Template{
 		}},
 	{Kind: "shell", Name: "PowerShell", Mode: "shell", ShellPath: msiPwsh, QuoteStyle: "auto",
 		Notes: []string{"只开一个 shell，没有恢复命令。商店版 pwsh 在无人登录的运行环境里无法启动，必须用 MSI 安装版。"}},
+	// Linux nodes (2026-10-11, Ubuntu 26.04): the CLI runs under an
+	// interactive login bash, which reads ~/.profile and ~/.bashrc, so the
+	// PATH entries the official installers add there (~/.local/bin,
+	// ~/.npm-global/bin) apply as in the user's own terminal.
+	{OS: "linux", Kind: "claude", Name: "Claude Code（Linux）", Mode: "shell", ShellPath: "/bin/bash", Command: "claude",
+		ResumeCmd: "claude --resume {session}", ContinueCmd: "claude --continue", QuoteStyle: "auto", EnvHints: []string{"CLAUDE_CONFIG_DIR"},
+		Notes: []string{
+			"Linux 节点：bash 以登录、交互方式启动，~/.profile 和 ~/.bashrc 里加的 PATH 都生效；找不到 claude 时在环境变量里写 PATH。",
+			"Linux 节点没有图形剪贴板：粘贴的图片以文件路径粘进终端，可让 Claude Code 读取该路径。",
+		}},
+	{OS: "linux", Kind: "codex", Name: "Codex（Linux）", Mode: "shell", ShellPath: "/bin/bash", Command: "codex",
+		ResumeCmd: "codex resume {session}", ContinueCmd: "codex resume --last", QuoteStyle: "auto", EnvHints: []string{"CODEX_HOME"},
+		Notes: []string{"Linux 节点：npm 全局安装的 codex 在 ~/.npm-global/bin 一类目录里，要由 ~/.profile 或 ~/.bashrc 加进 PATH，或在环境变量里写 PATH。"}},
+	{OS: "linux", Kind: "shell", Name: "Bash（Linux）", Mode: "shell", ShellPath: "/bin/bash", QuoteStyle: "auto",
+		Notes: []string{"只开一个登录 shell，没有恢复命令。"}},
 }
 
 var sessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)

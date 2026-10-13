@@ -16,8 +16,11 @@ const (
 )
 
 type wsMsg struct {
-	kind int
-	data []byte
+	kind     int
+	data     []byte
+	check    func() bool
+	rejected func()
+	written  func(bool)
 }
 
 // wsConn gives a WebSocket a single writer and a bounded, byte-accounted send
@@ -48,6 +51,13 @@ func newWSConn(c *websocket.Conn, limitBytes int64, readLimit int64) *wsConn {
 func (w *wsConn) touch() { w.c.SetReadDeadline(time.Now().Add(wsDeadAfter)) }
 
 func (w *wsConn) send(kind int, data []byte) bool {
+	return w.sendChecked(kind, data, nil, nil)
+}
+
+func (w *wsConn) sendChecked(kind int, data []byte, check func() bool, rejected func()) bool {
+	return w.sendTracked(kind, data, check, rejected, nil)
+}
+func (w *wsConn) sendTracked(kind int, data []byte, check func() bool, rejected func(), written func(bool)) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	select {
@@ -68,7 +78,7 @@ func (w *wsConn) send(kind int, data []byte) bool {
 		}
 	}
 	select {
-	case w.out <- wsMsg{kind, data}:
+	case w.out <- wsMsg{kind: kind, data: data, check: check, rejected: rejected, written: written}:
 		w.queued.Add(int64(len(data)))
 		if kind == websocket.TextMessage {
 			w.controlBytes += int64(len(data))
@@ -134,10 +144,19 @@ func (w *wsConn) writeLoop() {
 		default:
 		}
 		if m, ok := w.take(); ok {
+			if !m.permitted() {
+				continue
+			}
 			w.c.SetWriteDeadline(time.Now().Add(wsWriteWait))
 			if w.c.WriteMessage(m.kind, m.data) != nil {
+				if m.written != nil {
+					m.written(false)
+				}
 				w.close()
 				return
+			}
+			if m.written != nil {
+				m.written(true)
 			}
 			continue
 		}

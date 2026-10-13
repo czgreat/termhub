@@ -1,8 +1,7 @@
-//go:build windows
-
 // Package host implements docs/M3-会话宿主.md: the long-lived process that
-// owns every terminal session of one Windows user and serves the agent over a
-// named pipe, so that agent upgrades and crashes never end a session.
+// owns every terminal session of one user and serves the agent over a named
+// pipe (Windows) or a Unix socket (Linux), so that agent upgrades and crashes
+// never end a session.
 package host
 
 import (
@@ -16,9 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Microsoft/go-winio"
-	"golang.org/x/sys/windows"
-
 	"termhub/internal/proto"
 	"termhub/internal/session"
 )
@@ -28,21 +24,12 @@ var Version = "dev"
 
 // Config holds what differs between production and tests.
 type Config struct {
-	PipeName    string        // default: \\.\pipe\termhub-host-<user SID>
-	StateDir    string        // default: %LOCALAPPDATA%\termhub\host
+	PipeName    string        // default: DefaultPipeName(), a pipe or a socket path
+	StateDir    string        // default: %LOCALAPPDATA%\termhub\host, or ~/.local/share/termhub/host
 	MaxSessions int           // default 64
 	IdleExit    time.Duration // exit when no sessions and no agent for this long; default 10m
 	Tick        time.Duration // idle accounting granularity; default 1s
 	Log         *slog.Logger
-}
-
-// DefaultPipeName returns the per-user pipe name.
-func DefaultPipeName() (string, error) {
-	u, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		return "", err
-	}
-	return `\\.\pipe\termhub-host-` + u.User.Sid.String(), nil
 }
 
 type entry struct {
@@ -84,7 +71,7 @@ func New(cfg Config) (*Host, error) {
 		cfg.PipeName = name
 	}
 	if cfg.StateDir == "" {
-		cfg.StateDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "termhub", "host")
+		cfg.StateDir = defaultStateDir()
 	}
 	if cfg.MaxSessions == 0 {
 		cfg.MaxSessions = 64
@@ -98,17 +85,7 @@ func New(cfg Config) (*Host, error) {
 	if cfg.Log == nil {
 		cfg.Log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
-	u, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		return nil, err
-	}
-	// Only this user. go-winio creates the first instance with
-	// FILE_FLAG_FIRST_PIPE_INSTANCE and rejects remote clients.
-	ln, err := winio.ListenPipe(cfg.PipeName, &winio.PipeConfig{
-		SecurityDescriptor: "D:P(A;;GA;;;" + u.User.Sid.String() + ")",
-		InputBufferSize:    1 << 20,
-		OutputBufferSize:   1 << 20,
-	})
+	ln, err := listen(cfg.PipeName)
 	if err != nil {
 		return nil, fmt.Errorf("host: pipe %s: %w", cfg.PipeName, err)
 	}

@@ -1,5 +1,3 @@
-//go:build windows
-
 // Package e2e runs the real components together: Hub handlers, agent, session
 // host, pseudo console. Only the CLI is the project's test CLI (docs/M12 第 4 节).
 package e2e
@@ -41,8 +39,8 @@ var testcli string
 
 func TestMain(m *testing.M) {
 	dir, _ := os.MkdirTemp("", "termhub-e2e")
-	testcli = filepath.Join(dir, "testcli.exe")
-	gobin := filepath.Join(runtime.GOROOT(), "bin", "go.exe")
+	testcli = filepath.Join(dir, "testcli"+exeSuffix)
+	gobin := filepath.Join(runtime.GOROOT(), "bin", "go"+exeSuffix)
 	if _, err := os.Stat(gobin); err != nil {
 		gobin = "go"
 	}
@@ -107,7 +105,7 @@ func newWorld(t *testing.T) *world {
 	c := *srv.Client()
 	c.Jar = jar
 	w := &world{t: t, db: db, srv: srv, base: srv.URL, client: &c, tlsc: srv.Client().Transport.(*http.Transport).TLSClientConfig,
-		pipe: fmt.Sprintf(`\\.\pipe\termhub-e2e-%d`, time.Now().UnixNano())}
+		pipe: testPipe(t)}
 	const pw = "correct horse battery"
 	svc.Setup(svc.SetupToken(), "root", pw, "")
 	if code, _ := w.call("POST", "/api/auth/login", map[string]string{"username": "root", "password": pw}); code != 200 {

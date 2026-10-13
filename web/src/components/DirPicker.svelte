@@ -2,6 +2,7 @@
   // Folder browser and "new folder" (docs/M4 第 4 节, M10 第 2 节).
   import { onMount } from 'svelte'
   import { get, post, type Drive, type Listing } from '../lib/api'
+  import { crumbsOf, isPosix, joinPath } from '../lib/nodepath'
 
   let { nodeId, start, onpick, onclose }: { nodeId: number; start: string; onpick: (p: string) => void; onclose: () => void } = $props()
   let drives = $state<Drive[]>([]), desktop = $state('') // desktop: "" from a node older than the 桌面 button
@@ -36,11 +37,11 @@
   // whenever either changed while the user was browsing elsewhere.
   onMount(() => { loadDrives(); if (start) load(start) })
 
-  const crumbs = $derived.by(() => {
-    if (!listing) return []
-    const parts = listing.path.split('\\').filter(Boolean)
-    return parts.map((p, i) => ({ name: i === 0 ? p + '\\' : p, path: parts.slice(0, i + 1).join('\\') + (i === 0 ? '\\' : '') }))
-  })
+  const crumbs = $derived(listing ? crumbsOf(listing.path) : [])
+  // A Linux node offers its home folder where Windows offers the desktop
+  // (fs.Desktop in internal/agent/fs/fs_linux.go), and a root instead of drives.
+  const posixNode = $derived(isPosix(desktop || drives[0]?.letter || ''))
+  const driveRoot = (d: Drive) => isPosix(d.letter) ? d.letter : d.letter + '\\'
   const fmt = (n: number) => n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(1) + ' GB'
 </script>
 
@@ -51,9 +52,9 @@
       <label class="row" style="margin:0 0 0 auto"><input type="checkbox" bind:checked={showHidden} onchange={() => listing && load(listing.path)} style="width:auto" /> 显示隐藏</label>
     </div>
     <div class="drives row">
-      {#if desktop}<button onclick={() => load(desktop)} title={desktop} data-testid="dir-desktop">🖥 桌面</button>{/if}
+      {#if desktop}<button onclick={() => load(desktop)} title={desktop} data-testid="dir-desktop">{posixNode ? '🏠 主目录' : '🖥 桌面'}</button>{/if}
       {#each drives as d}
-        <button onclick={() => load(d.letter + '\\')} title={d.free !== undefined ? `可用 ${fmt(d.free)} / ${fmt(d.total ?? 0)}` : d.kind}>{d.letter} {d.label ? `(${d.label})` : ''}</button>
+        <button onclick={() => load(driveRoot(d))} title={d.free !== undefined ? `可用 ${fmt(d.free)} / ${fmt(d.total ?? 0)}` : d.kind}>{d.letter} {d.label ? `(${d.label})` : ''}</button>
       {/each}
     </div>
     {#if listing}
@@ -68,7 +69,7 @@
           <button class="entry" onclick={() => load(listing!.parent!)}>📁 ..</button>
         {/if}
         {#each listing.entries as e (e.name)}
-          <button class="entry" class:muted={!e.dir} disabled={!e.dir} onclick={() => load(listing!.path.replace(/\\$/, '') + '\\' + e.name)}>
+          <button class="entry" class:muted={!e.dir} disabled={!e.dir} onclick={() => load(joinPath(listing!.path, e.name))}>
             {e.dir ? '📁' : '📄'} {e.name}{e.link ? ' ↗' : ''}
             {#if !e.dir}<span class="muted size">{fmt(e.size)}</span>{/if}
           </button>

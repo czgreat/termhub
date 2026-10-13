@@ -1,9 +1,9 @@
 # termhub 开发须知（给 Codex、Claude Code 等代理）
 
-termhub 让你在浏览器（含手机）里使用局域网 Windows 电脑上的终端和 AI CLI（Claude Code、Codex）。它由三部分组成：
+termhub 让你在浏览器（含手机）里使用局域网 Windows 或 Linux 电脑上的终端和 AI CLI（Claude Code、Codex）。它由三部分组成：
 
 - Go 写的 Hub，通常跑在 Linux 的 Docker 里；
-- 每台 Windows 电脑上的 agent；
+- 每台节点电脑（Windows 或 Linux）上的 agent；
 - Svelte 5 写的网页。
 
 先读 `README.md`、`docs/架构.md` 和 `docs/安全说明.md`。
@@ -22,13 +22,13 @@ termhub 让你在浏览器（含手机）里使用局域网 Windows 电脑上的
 
 ## 开发与测试
 
-- 需要 Go 1.27 或更高、Node.js 22.13.0 或更高（建议使用 CI 同款 22.x）。Windows 专属的包（agent、会话宿主、ConPTY）只能在 Windows 上编译和测试。
+- 需要 Go 1.27 或更高、Node.js 22.13.0 或更高（建议使用 CI 同款 22.x）。平台专属代码在 `*_windows.go`、`*_linux.go` 里，只能在对应系统上测试；改共用代码时两个平台都要编译：`GOOS=windows go vet ./... && GOOS=linux go vet ./...`。
 - **网页**（在 `web/` 下执行）：
   - `npm ci`、`npm run build`：产物进 `internal/hub/web/dist/`，编译 Hub 前必须先构建网页；
   - `npm run check`：svelte-check；
   - `npm run test:unit`：node:test，不开浏览器、不连节点。
 - **Go**：`go vet ./...`、`go test ./...`。
-  - `test/e2e` 会起本地 Hub、假节点和 Playwright 浏览器，一次约 70 秒。每轮改动跑一次就够，不要反复跑。
+  - `test/e2e` 会起本地 Hub 和假节点；Windows 上还会起 Playwright 浏览器，一次约 70 秒。每轮改动跑一次就够，不要反复跑。
 - 新增的行为要有测试。最好先确认测试在旧代码上是失败的。
 - 注释和文档风格跟随周围的代码。注释说明“为什么”，必要时注明出处（例如相关函数或公开问题单）。
 
@@ -36,13 +36,13 @@ termhub 让你在浏览器（含手机）里使用局域网 Windows 电脑上的
 
 ```
 cmd/termhub/         Hub
-cmd/termhub-agent/   每台 Windows 上的程序：enroll、run、host
+cmd/termhub-agent/   每台节点上的程序：enroll、run、host
 internal/            各模块的实现，包名与职责见 docs/架构.md
 web/                 网页（Svelte 5 + xterm.js）
 tools/testcli/       测试用的假 CLI
 tools/s0check/       运行环境自检
 test/e2e/            端到端测试
-deploy/              Docker、发布脚本、Windows 安装脚本
+deploy/              Docker、发布脚本、Windows 安装脚本；deploy/linux/ 是 Linux 节点脚本
 docs/                设计文档与部署文档
 ```
 
@@ -51,5 +51,5 @@ docs/                设计文档与部署文档
 见 `docs/部署指南.md`：
 
 - Hub 用 `bash deploy/release.sh user@docker-host` 或 `bash deploy/release.sh local`，版本号是 `0.1.0-<短哈希>`；
-- agent 用 `deploy/install-agent.ps1` 安装，用 `deploy/upgrade-agent.ps1` 升级。
+- agent 用 `deploy/install-agent.ps1` 安装，用 `deploy/upgrade-agent.ps1` 升级；Linux 节点用 `deploy/linux/` 里的脚本，见 `docs/Linux节点.md`。
 - 有数据库迁移时，Hub 启动前会自动把数据库备份到 `data/backups/pre-migrate-vN-*.db`。迁移后旧版 Hub 打不开新库，回退时要把备份一起换回去。

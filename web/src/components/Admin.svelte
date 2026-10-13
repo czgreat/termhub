@@ -54,6 +54,9 @@
       '在那台机器上，以要运行 agent 的 Windows 用户身份，用 deploy\\install-agent.ps1 安装（登记并设置自启）：',
       `.\\install-agent.ps1 -Hub ${location.origin} -Token ${r.token} -Pin ${system.cert_fingerprint}`,
       '或只登记：termhub-agent enroll --hub … --token … --pin …，然后 termhub-agent run',
+      'Linux 节点：以要使用的那个用户身份，用 deploy/linux/install-agent.sh 安装（登记并设置 systemd 用户服务）。令牌不写进命令，运行后按提示粘贴：',
+      `bash install-agent.sh --hub ${location.origin} --pin ${system.cert_fingerprint}`,
+      `令牌：${r.token}`,
     ] }
   })
   const rotate = (n: Node) => act(async () => {
@@ -205,7 +208,7 @@
       {:else}
         <div class="row" style="flex-wrap:wrap">
           <span class="muted">从模板新建：</span>
-          {#each templates as t}<button onclick={() => startProfile(t)} data-testid="tpl-{t.kind}">{t.name}</button>{/each}
+          {#each templates as t}<button onclick={() => startProfile(t)} data-testid="tpl-{t.kind}{t.os ? `-${t.os}` : ''}">{t.name}</button>{/each}
           <button onclick={() => startProfile()}>空白</button>
         </div>
         <table>

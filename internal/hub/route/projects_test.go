@@ -46,7 +46,7 @@ func TestResumeRecentDirsAndTemplates(t *testing.T) {
 	// Templates: administrators only; they carry what M10 documents.
 	code, out := admin.call("GET", "/api/admin/profile-templates", nil)
 	tpls, _ := out["templates"].([]any)
-	if code != 200 || len(tpls) != 3 || tpls[0].(map[string]any)["resume_cmd"] != "claude --resume {session}" {
+	if code != 200 || len(tpls) != 6 || tpls[0].(map[string]any)["resume_cmd"] != "claude --resume {session}" || tpls[3].(map[string]any)["os"] != "linux" {
 		t.Fatalf("templates: %d %v", code, out)
 	}
 	_, out = admin.call("POST", "/api/admin/users", map[string]string{"username": "alice", "role": "user"})

@@ -1,5 +1,3 @@
-//go:build windows
-
 package fs
 
 import (
@@ -10,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -19,6 +18,9 @@ const (
 	MaxImageSize       = 20 << 20
 	pasteKeep          = 7 * 24 * time.Hour
 )
+
+// pasteExt is the extension a pasted file keeps from its name.
+var pasteExt = regexp.MustCompile(`^\.[a-z0-9]{1,10}$`)
 
 // imageType recognises an image by its leading bytes. Neither the file name
 // nor what the browser claims is trusted (docs/M4 第 7 节).
@@ -57,8 +59,11 @@ func BeginPaste(base, session, name string, size int64, imageOnly bool) (*Upload
 	rnd := make([]byte, 4)
 	rand.Read(rnd)
 	stem := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), hex.EncodeToString(rnd))
+	// Letters and digits only: the path is pasted into a terminal, and a
+	// profile may quote it in a way that leaves $ ; | ` ' active
+	// (复核 PR #40 第 7 条).
 	ext := strings.ToLower(filepath.Ext(name))
-	if CheckName("x"+ext) != nil || len(ext) > 16 || strings.ContainsAny(ext, " ") {
+	if !pasteExt.MatchString(ext) {
 		ext = ""
 	}
 	u := &Upload{size: size, sum: sha256.New()}

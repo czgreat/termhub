@@ -29,6 +29,7 @@ import (
 	"strings"
 	"time"
 
+	"termhub/internal/egress"
 	"termhub/internal/hub/auth"
 	"termhub/internal/hub/route"
 	"termhub/internal/hub/store"
@@ -45,16 +46,17 @@ type Config struct {
 	// request: the source address alone says only "came through the tunnel",
 	// and anything that can reach the tunnel's far end would pass as the proxy
 	// (复核：公网入口 1).
-	ProxyKey  string
-	DataDir   string
-	Auth      auth.Config
-	AuditKeep time.Duration
-	Log       *slog.Logger
+	ProxyKey   string
+	EgressFile string
+	DataDir    string
+	Auth       auth.Config
+	AuditKeep  time.Duration
+	Log        *slog.Logger
 }
 
 // ConfigFromEnv builds a Config, refusing anything ambiguous.
 func ConfigFromEnv(getenv func(string) string) (Config, error) {
-	c := Config{PublicURLs: getenv("TH_PUBLIC_URL"), LANListen: or(getenv("TH_LAN_LISTEN"), ":27443"),
+	c := Config{EgressFile: getenv("TH_EGRESS_CONFIG"), PublicURLs: getenv("TH_PUBLIC_URL"), LANListen: or(getenv("TH_LAN_LISTEN"), ":27443"),
 		ProxyListen: getenv("TH_PROXY_LISTEN"), ProxyKey: getenv("TH_PROXY_KEY"), DataDir: or(getenv("TH_DATA_DIR"), "/data"), AuditKeep: 180 * 24 * time.Hour}
 	if c.PublicURLs == "" {
 		return c, errors.New("TH_PUBLIC_URL is required, e.g. https://192.168.1.10:27443")
@@ -116,15 +118,18 @@ func or(a, b string) string {
 
 // Server is a running Hub.
 type Server struct {
-	cfg         Config
-	DB          *store.DB
-	Auth        *auth.Service
-	Hub         *route.Hub
-	Fingerprint string // SHA-256 of the LAN certificate, what agents pin
-	lan, proxy  net.Listener
-	httpLAN     *http.Server
-	httpProxy   *http.Server
-	stop        chan struct{}
+	cfg              Config
+	DB               *store.DB
+	Auth             *auth.Service
+	Hub              *route.Hub
+	Fingerprint      string // SHA-256 of the LAN certificate, what agents pin
+	lan, proxy       net.Listener
+	httpLAN          *http.Server
+	httpProxy        *http.Server
+	housekeepingDone chan struct{}
+	egressCancel     context.CancelFunc
+	egressDone       chan struct{}
+	stop             chan struct{}
 }
 
 // loadMasterKey creates the key on a virgin data directory and refuses to
@@ -244,6 +249,10 @@ func New(cfg Config, getenv func(string) string) (*Server, error) {
 	}
 	seal, _ := auth.NewSealer(key)
 	s.Hub = route.NewHub(route.NewRegistry(db, seal, nil), webAuth, route.Limits{}, cfg.Log)
+	if s.Hub.Egress, err = egress.Load(cfg.EgressFile); err != nil {
+		db.Close()
+		return nil, err
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
@@ -275,7 +284,12 @@ func New(cfg Config, getenv func(string) string) (*Server, error) {
 		s.httpProxy = &http.Server{Handler: s.proxyGate(handler), ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 		go s.httpProxy.Serve(s.proxy)
 	}
-	go s.housekeeping()
+	egressCtx, cancel := context.WithCancel(context.Background())
+	s.egressCancel = cancel
+	s.egressDone = make(chan struct{})
+	go func() { defer close(s.egressDone); s.Hub.WatchEgress(egressCtx) }()
+	s.housekeepingDone = make(chan struct{})
+	go func() { defer close(s.housekeepingDone); s.housekeeping() }()
 	return s, nil
 }
 
@@ -456,6 +470,13 @@ func (s *Server) Close() {
 	}
 	if s.httpProxy != nil {
 		s.httpProxy.Shutdown(ctx)
+	}
+	if s.egressCancel != nil {
+		s.egressCancel()
+		<-s.egressDone
+	}
+	if s.housekeepingDone != nil {
+		<-s.housekeepingDone
 	}
 	s.DB.Close()
 }

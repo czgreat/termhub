@@ -1,11 +1,10 @@
-//go:build windows
-
 // Command termhub-agent is the per-machine program of termhub. One executable
 // plays several roles, selected by a subcommand (docs/M5 第 2 节). Only the
 // roles implemented so far are listed here.
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -13,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"termhub/internal/agent"
@@ -42,8 +42,8 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
-  termhub-agent enroll --hub https://<hub>:27443 --token thn_... [--pin <sha256 of the Hub certificate>] [--name <label>]
-  termhub-agent run      connect this machine to the Hub (what the scheduled task starts)
+  termhub-agent enroll --hub https://<hub>:27443 --token thn_...|- [--pin <sha256 of the Hub certificate>] [--name <label>]
+  termhub-agent run      connect this machine to the Hub (what the scheduled task or systemd unit starts)
   termhub-agent host     the session host; started by "run" when needed
   termhub-agent version`)
 	os.Exit(2)
@@ -64,10 +64,14 @@ func logger(sub string) *slog.Logger {
 func enroll() {
 	fs := flag.NewFlagSet("enroll", flag.ExitOnError)
 	hub := fs.String("hub", "", "Hub address, https://host:port")
-	token := fs.String("token", "", "node token shown once by the Hub")
+	token := fs.String("token", "", "node token shown once by the Hub; \"-\" reads it from standard input, which keeps it out of the process list")
 	pin := fs.String("pin", "", "SHA-256 fingerprint of the Hub's certificate (needed for a self-signed Hub)")
 	name := fs.String("name", "", "label for this machine (default: the computer name)")
 	fs.Parse(os.Args[2:])
+	if *token == "-" {
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		*token = strings.TrimSpace(line)
+	}
 	if *hub == "" || *token == "" {
 		usage()
 	}
@@ -87,13 +91,13 @@ func enroll() {
 		fmt.Fprintln(os.Stderr, "enrol failed:", err)
 		os.Exit(1)
 	}
-	fmt.Println("enrolled. The Hub accepted this machine; the token is stored sealed for this Windows user in", agent.Dir())
+	fmt.Println("enrolled. The Hub accepted this machine; the token is stored sealed for this user in", agent.Dir())
 	fmt.Println("start it with: termhub-agent run")
 }
 
 func runAgent() {
 	// -pipe exists for tests and development, so that they never talk to a
-	// production host running under the same Windows user.
+	// production host running under the same user.
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	pipeFlag := fs.String("pipe", "", "session host pipe (default: per-user name)")
 	fs.Parse(os.Args[2:])
@@ -119,7 +123,7 @@ func runAgent() {
 	agent.Version = version
 	a := agent.New(agent.Config{HubURL: file.HubURL, Token: token, NodeName: file.NodeName, PipeName: pipe, TLS: tlsc, Log: log,
 		StartHost: func() error { return agent.StartHostProcess(*pipeFlag) }})
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, cancel := signal.NotifyContext(context.Background(), agentStopSignals...)
 	defer cancel()
 	log.Info("agent started", "version", version, "hub", file.HubURL)
 	a.Run(ctx) // ending the agent never ends the host or its sessions
@@ -127,12 +131,12 @@ func runAgent() {
 }
 
 // runHost is the session host (docs/M3). It has no console, no network and no
-// credentials; it serves the agent on a per-user named pipe.
+// credentials; it serves the agent on a per-user named pipe or Unix socket.
 func runHost() {
 	// -pipe and -state exist for tests and for running two hosts side by side
 	// during development; production uses the per-user defaults.
 	fs := flag.NewFlagSet("host", flag.ExitOnError)
-	pipe := fs.String("pipe", "", "named pipe to serve (default: per-user name)")
+	pipe := fs.String("pipe", "", "named pipe or socket path to serve (default: per-user name)")
 	state := fs.String("state", filepath.Join(agent.Dir(), "host"), "state and log directory")
 	fs.Parse(os.Args[2:])
 	dir := *state
@@ -150,6 +154,15 @@ func runHost() {
 		os.Exit(1)
 	}
 	log.Info("host started", "version", version)
+	if len(hostStopSignals) > 0 {
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, hostStopSignals...)
+		go func() {
+			s := <-sig
+			log.Info("host stopping", "signal", s.String())
+			h.Shutdown() // ends the sessions properly, and records that it did
+		}()
+	}
 	h.Wait()
 	log.Info("host stopped")
 }

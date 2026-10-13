@@ -4,9 +4,9 @@
 
 **把终端里的 Claude Code、Codex CLI 和其他 CLI Agent 转到浏览器里使用，支持文件上传、下载，以及文字和图片的粘贴、终端文字的复制。**
 
-支持电脑浏览器、手机浏览器，也支持安装为 PWA。可以查看输出、发送指令、传输文件，在同一个页面里管理多台 Windows 电脑上的会话。
+支持电脑浏览器、手机浏览器，也支持安装为 PWA。可以查看输出、发送指令、传输文件，在同一个页面里管理多台 Windows 或 Linux 电脑上的会话。
 
-termhub 转发的是原来的终端，会话仍在你的 Windows 电脑上运行。你用的还是原来的 CLI、账号和工作目录。
+termhub 转发的是原来的终端，会话仍在你自己的电脑上运行。你用的还是原来的 CLI、账号和工作目录。
 
 ## 功能
 
@@ -29,14 +29,14 @@ termhub 不修改官方 CLI，也不代替它们的安装、登录或订阅。
 
 ## 安装
 
-需要一台运行 Hub 的 Linux 主机，以及至少一台作为节点的 Windows 电脑。Hub 的安装说明使用 Docker 和 Compose；Windows 节点使用 PowerShell 7（MSI 版，`pwsh.exe`），不用系统自带的 Windows PowerShell 5.1。
+需要一台运行 Hub 的 Linux 主机，以及至少一台作为节点的 Windows 或 Linux 电脑。Hub 的安装说明使用 Docker 和 Compose；Windows 节点使用 PowerShell 7（MSI 版，`pwsh.exe`），不用系统自带的 Windows PowerShell 5.1。
 
 v0.1.0 是首个发行版本。发布后可在 [Releases](https://github.com/czgreat/termhub/releases) 下载：
 
 | 程序 | 平台 |
 | --- | --- |
 | Hub | Linux amd64 / arm64 |
-| agent | Windows amd64 |
+| agent | Windows amd64（Linux 节点暂无发布包，需从源码构建） |
 
 - **使用发布包**：按[发布包安装说明](docs/发布包安装.md)操作，无需 Go 或 Node.js。
 - **从源码构建**：见[部署指南](docs/部署指南.md)，需要 Go 1.27+、Node.js 22.13+。
@@ -53,9 +53,9 @@ ARM64 包尚未在 ARM 真机验收。发布包未签名，请核对来源和同
 
 ## 运行方式与限制
 
-浏览器通过 HTTPS / WebSocket 连接 Hub，Windows agent 主动连接 Hub。Hub 提供网页、账号管理和会话转发；节点上的会话宿主持有终端进程。结构见[架构说明](docs/架构.md)。
+浏览器通过 HTTPS / WebSocket 连接 Hub，节点上的 agent 主动连接 Hub。Hub 提供网页、账号管理和会话转发；节点上的会话宿主持有终端进程。结构见[架构说明](docs/架构.md)。
 
-- 节点目前只支持 Windows，不支持 Linux 或 macOS 节点。网页界面目前以中文为主。
+- 节点支持 Windows 和 Linux，不支持 macOS。Linux 节点需要 systemd，已在 Ubuntu 26.04 x86-64 上测试，安装见 [Linux 节点](docs/Linux节点.md)。网页界面目前以中文为主。
 - 默认在 Windows 用户登录后延迟 3 分钟启动 agent。无人登录也需在线时，按安装文档配置 `-AtStartup`；必须使用同一个具备管理员权限的安装账号。
 - 升级 agent 的连接进程不会更新已运行的会话宿主。宿主更新需另行安排结束会话和重启。
 - 本版使用脚本安装和升级，没有自动升级或托盘程序。
@@ -81,7 +81,7 @@ cd ..
 go test ./...
 ```
 
-完整 Go 测试需在 Windows 上执行，包含使用假 CLI 的浏览器端到端测试。开发约定见 [AGENTS.md](AGENTS.md)。
+部分 Go 测试只能在 Windows 或 Linux 其中一个平台上执行；浏览器端到端测试需在 Windows 上运行，使用假 CLI。开发约定见 [AGENTS.md](AGENTS.md)。
 
 ## 许可
 

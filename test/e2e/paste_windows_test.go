@@ -4,8 +4,6 @@ package e2e
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"image"
 	"image/png"
 	"os"
@@ -16,26 +14,6 @@ import (
 
 	"termhub/internal/hub/route"
 )
-
-func jsonUnmarshal(b []byte, v any) { json.Unmarshal(b, v) }
-
-// paste drives "paste into terminal" the way the browser will: announce, send
-// chunks, finish, then type the returned text into the terminal.
-func (w *world) paste(sid, name string, data []byte, isImage bool) (int, map[string]any) {
-	w.t.Helper()
-	code, out := w.call("POST", "/api/sessions/"+sid+"/paste-file", map[string]any{"name": name, "size": len(data), "image": isImage})
-	if code != 200 {
-		return code, out
-	}
-	uid, node := out["id"].(string), int(out["node_id"].(float64))
-	c, body, _ := w.raw("PUT", fmt.Sprintf("/api/nodes/%d/fs/uploads/%s?offset=0", node, uid), data, nil)
-	if c != 200 {
-		var e map[string]any
-		jsonUnmarshal(body, &e)
-		return c, e
-	}
-	return w.call("POST", fmt.Sprintf("/api/nodes/%d/fs/uploads/%s/finish", node, uid), map[string]string{"sha256": hashOf(string(data))})
-}
 
 // Image paste end to end (docs/M4 第 7 节): the image lives in the browser's
 // clipboard, so it is uploaded to the node and its path is typed into the CLI.

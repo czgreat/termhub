@@ -157,14 +157,6 @@ func (t *procTree) close() {
 	}
 }
 
-// ProcID identifies a process beyond its pid: a recycled pid has another
-// creation time.
-type ProcID struct {
-	PID     uint32 `json:"pid"`
-	Created int64  `json:"created"`
-	Name    string `json:"name,omitempty"`
-}
-
 // KillIfSame terminates the process only if pid still denotes the process
 // that was created at the recorded time. It is used to clean up what a
 // crashed host left behind (docs/M3 第 7 节).

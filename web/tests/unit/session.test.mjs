@@ -253,3 +253,68 @@ test('F09 takeover between chunks also blocks a partially admitted batch', async
  assert.deepEqual(await result,{status:'rejected',acceptedBytes:65536})
  ws.msg({t:'driver',on:true});l.input('\r');assert.equal(l.refuses,true);assert.ok(events.includes('input_blocked'));assert.deepEqual(ws.text(),[]);l.close()
 })
+
+// Egress guard: no real browser, gateway, node or CLI.
+test('egress lock drops queued input and recovery cannot replay it', clock(() => {
+  const { l } = link()
+  l.input('queued-before-policy\r')
+  const ws = FakeWS.last; ws.open()
+  ws.msg({ t: 'egress_status', payload: { allowed: false, epoch: 1, valid_until: 30 } })
+  ws.attached(); l.input('blocked\r')
+  assert.equal(l.canSend, false)
+  ws.msg({ t: 'egress_status', payload: { allowed: true, epoch: 2, valid_until: 30 } })
+  assert.equal(l.canSend, true)
+  assert.deepEqual(ws.text(), [])
+  l.input('new')
+  const inputs = ws.sent.map(([, d]) => JSON.parse(d)).filter(m => m.t === 'input_batch')
+  assert.equal(inputs.length, 1)
+  assert.equal(atob(inputs[0].data), 'new')
+  assert.equal(inputs[0].egress_epoch, 2)
+  l.close()
+}))
+test('egress expiry refuses input without a status message; interrupt remains explicit', clock(() => {
+  const { l } = link(); l.connect(); const ws = FakeWS.last; ws.open()
+  ws.msg({ t: 'egress_status', payload: { allowed: true, epoch: 4, valid_until: 1 } }); ws.attached()
+  mock.timers.tick(1001)
+  assert.equal(l.canSend, false)
+  l.input('must-not-send'); l.input('\x03')
+  assert.deepEqual(ws.text(), [])
+  assert.equal(ws.sent.map(([, d]) => JSON.parse(d)).filter(m => m.t === 'interrupt').length, 1)
+  l.close()
+}))
+test('protected disconnected input is never queued for attach', clock(() => {
+  const { l } = link(); l.connect(); const ws = FakeWS.last; ws.open()
+  ws.msg({ t: 'egress_status', payload: { allowed: true, epoch: 4, valid_until: 30 } }); ws.attached()
+  l.detach(); l.input('offline\r'); l.connect(); const next = FakeWS.last; next.open()
+  next.msg({ t: 'egress_status', payload: { allowed: true, epoch: 4, valid_until: 30 } }); next.attached()
+  assert.deepEqual(next.text(), [])
+  assert.equal(next.sent.some(([, d]) => d.includes('input_batch')), false)
+  l.close()
+}))
+
+test('an unacknowledged protected batch stays unknown after a guard transition', async () => {
+  const { l } = link(); l.connect(); const ws = FakeWS.last; ws.open()
+  ws.msg({ t: 'egress_status', payload: { allowed: true, epoch: 1, valid_until: Date.now() / 1000 + 60 } })
+  ws.msg({ t: 'attached', mode: 'resume', from: 0, input_ack: true })
+  const result = l.inputBatch('may have reached CLI')
+  ws.msg({ t: 'egress_status', payload: { allowed: false, epoch: 2, valid_until: 0 } })
+  assert.deepEqual(await result, { status: 'unknown', acceptedBytes: 0 })
+  ws.msg({ t: 'egress_status', payload: { allowed: true, epoch: 3, valid_until: Date.now() / 1000 + 60 } })
+  assert.equal(l.canSend, false) // recovery does not acknowledge a torn command
+  l.close()
+})
+test('protected direct-key rejection and missing acknowledgement stop later Enter', clock(() => {
+  for (const code of ['egress_blocked', 'read_only', 'input_overflow', 'unknown']) {
+    const { l } = link(); l.connect(); const ws = FakeWS.last; ws.open()
+    ws.msg({ t: 'egress_status', payload: { allowed: true, epoch: 1, valid_until: 60 } }); ws.attached()
+    l.input('partial')
+    const id = JSON.parse(ws.sent.at(-1)[1]).id
+    if (code === 'unknown') mock.timers.tick(5001)
+    else ws.msg({ t: 'input_result', re: id, code })
+    const before = ws.sent.length
+    l.input('\r')
+    assert.equal(ws.sent.length, before)
+    assert.equal(l.canSend, false)
+    l.close()
+  }
+}))

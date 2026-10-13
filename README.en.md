@@ -4,9 +4,9 @@
 
 **Use Claude Code, Codex CLI, and other terminal-based CLI agents in your browser, with file uploads and downloads, text and image pasting, and copying text from the terminal.**
 
-Use it in a desktop browser or a mobile browser, or install it as a PWA. Read output, send instructions, transfer files, and manage sessions from several Windows PCs in one place.
+Use it in a desktop browser or a mobile browser, or install it as a PWA. Read output, send instructions, transfer files, and manage sessions from several Windows or Linux machines in one place.
 
-termhub forwards the existing terminal. Sessions still run on your Windows PC, using the same CLI, account, and working directory.
+termhub forwards the existing terminal. Sessions still run on your own machine, using the same CLI, account, and working directory.
 
 ## Features
 
@@ -29,14 +29,14 @@ These screenshots use fictional machines, projects, and conversations. The mobil
 
 ## Installation
 
-You need a Linux host for the Hub and at least one Windows PC as a node. The Hub installation guides use Docker and Compose; Windows nodes require PowerShell 7 installed via MSI (`pwsh.exe`), not the built-in Windows PowerShell 5.1.
+You need a Linux host for the Hub and at least one Windows or Linux machine as a node. The Hub installation guides use Docker and Compose; Windows nodes require PowerShell 7 installed via MSI (`pwsh.exe`), not the built-in Windows PowerShell 5.1.
 
 v0.1.0 is the first release. Once published, packages are available from [Releases](https://github.com/czgreat/termhub/releases):
 
 | Component | Platform |
 | --- | --- |
 | Hub | Linux amd64 / arm64 |
-| agent | Windows amd64 |
+| agent | Windows amd64 (no Linux node package yet; build from source) |
 
 - **Prebuilt packages**: follow the [package installation guide](docs/发布包安装.md) (Chinese). Go and Node.js are not required.
 - **Build from source**: follow the [deployment guide](docs/部署指南.md) (Chinese). Requires Go 1.27+ and Node.js 22.13+.
@@ -53,9 +53,9 @@ Help me deploy termhub. First read https://github.com/czgreat/termhub/blob/main/
 
 ## How it runs and current limitations
 
-Browsers connect to the Hub over HTTPS / WebSocket. Windows agents initiate connections to the Hub. The Hub serves the web interface, manages accounts, and forwards sessions; a session host on each node owns the terminal processes. See the [architecture guide](docs/架构.md) (Chinese).
+Browsers connect to the Hub over HTTPS / WebSocket. The agent on each node initiates the connection to the Hub. The Hub serves the web interface, manages accounts, and forwards sessions; a session host on each node owns the terminal processes. See the [architecture guide](docs/架构.md) (Chinese).
 
-- Nodes currently require Windows. Linux and macOS nodes are not supported. The web interface is primarily in Chinese.
+- Nodes run on Windows or Linux; macOS is not supported. Linux nodes need systemd and have been tested on Ubuntu 26.04 x86-64; see the [Linux node guide](docs/Linux节点.md) (Chinese). The web interface is primarily in Chinese.
 - By default, the agent starts three minutes after Windows user logon. For startup without logon, follow the installation guide for `-AtStartup`, using the same installation account with administrator privileges.
 - Updating the agent connection process does not update an existing session host. Updating the host requires a separately planned session shutdown and restart.
 - Installation and upgrades use scripts. There is no automatic updater or tray application.
@@ -63,7 +63,7 @@ Browsers connect to the Hub over HTTPS / WebSocket. Windows agents initiate conn
 
 ## Access and backups
 
-Binding a node's CLI configuration to a user gives that user access to files available to the Windows account running the node. This is not filesystem isolation. Grant access only to people you trust.
+Binding a node's CLI configuration to a user gives that user access to files available to the account running the node. This is not filesystem isolation. Grant access only to people you trust.
 
 Keep Hub port 27443 restricted to your LAN. For remote access, configure an HTTPS reverse proxy or tunnel as described in the [security guide](docs/安全说明.md) (Chinese). Back up the entire `data/` directory, including the database, master key, and certificates.
 
@@ -81,7 +81,7 @@ cd ..
 go test ./...
 ```
 
-The full Go test suite requires Windows and includes browser end-to-end tests using a fake CLI. See [AGENTS.md](AGENTS.md) for development instructions.
+Some Go tests run only on Windows and some only on Linux; the browser end-to-end tests require Windows and use a fake CLI. See [AGENTS.md](AGENTS.md) for development instructions.
 
 ## License
 

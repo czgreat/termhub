@@ -50,9 +50,10 @@ func main() {
 		return
 	}
 	if *ignoreClose {
-		// On Windows, CTRL_CLOSE_EVENT is delivered as SIGTERM.
+		// On Windows, CTRL_CLOSE_EVENT is delivered as SIGTERM; on Linux the
+		// terminal closing is SIGHUP.
 		c := make(chan os.Signal, 8)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		go func() {
 			for s := range c {
 				fmt.Printf("IGNORED %v\r\n", s)

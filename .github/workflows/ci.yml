@@ -1,5 +1,6 @@
 # Unit tests on every push and pull request. The Windows end-to-end tests
-# (test/e2e: Playwright plus real ConPTY sessions) are left to local runs.
+# (test/e2e: Playwright plus real ConPTY sessions) are left to local runs; the
+# Linux job runs the Linux node end-to-end test (test CLI, no browser).
 name: ci
 on: [push, pull_request]
 

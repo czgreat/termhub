@@ -4,12 +4,15 @@ package host
 
 import (
 	"fmt"
+	"golang.org/x/sys/windows"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"termhub/internal/proto"
 	"termhub/internal/session"
@@ -52,7 +55,7 @@ func TestKilledHostTakesItsSessionsDown(t *testing.T) {
 	}
 
 	// Find the session's processes from outside: children of the host process.
-	before := testcliPIDs(t)
+	before := testcliPIDs(t, uint32(hostProc.Process.Pid))
 	if len(before) == 0 {
 		t.Fatal("test setup: no testcli processes found")
 	}
@@ -64,7 +67,7 @@ func TestKilledHostTakesItsSessionsDown(t *testing.T) {
 	for time.Now().Before(deadline) {
 		alive := 0
 		for _, id := range before {
-			if now, ok := session.IdentifyProcess(id.PID); ok && now.Created == id.Created {
+			if now, ok := session.IdentifyProcess(id.PID); ok && now.Created == id.Created && testProcessRunning(t, id.PID) {
 				alive++
 			}
 		}
@@ -76,26 +79,52 @@ func TestKilledHostTakesItsSessionsDown(t *testing.T) {
 	t.Fatalf("session processes survived the host: %+v", before)
 }
 
-func testcliPIDs(t *testing.T) []session.ProcID {
+// A terminated Windows process may retain its identity while another handle is
+// open. Identity is not liveness; wait on the process object, without killing it.
+func testProcessRunning(t *testing.T, pid uint32) bool {
 	t.Helper()
-	out, err := exec.Command("pwsh.exe", "-NoProfile", "-Command",
-		"(Get-Process testcli -ErrorAction SilentlyContinue).Id -join ','").Output()
+	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, pid)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(h)
+	result, err := windows.WaitForSingleObject(h, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return result == uint32(windows.WAIT_TIMEOUT)
+}
+func testcliPIDs(t *testing.T, hostPID uint32) []session.ProcID {
+	t.Helper()
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer windows.CloseHandle(snapshot)
+	rows := map[uint32]windows.ProcessEntry32{}
+	var pe windows.ProcessEntry32
+	pe.Size = uint32(unsafe.Sizeof(pe))
+	for err = windows.Process32First(snapshot, &pe); err == nil; err = windows.Process32Next(snapshot, &pe) {
+		rows[pe.ProcessID] = pe
+	}
+	if err != windows.ERROR_NO_MORE_FILES {
+		t.Fatal(err)
+	}
 	var ids []session.ProcID
-	var pid uint32
-	for _, c := range string(out) {
-		switch {
-		case c >= '0' && c <= '9':
-			pid = pid*10 + uint32(c-'0')
-		default:
-			if pid != 0 {
-				if id, ok := session.IdentifyProcess(pid); ok {
-					ids = append(ids, id)
-				}
+	for pid, row := range rows {
+		if !strings.EqualFold(windows.UTF16ToString(row.ExeFile[:]), "testcli.exe") {
+			continue
+		}
+		parent := row.ParentProcessID
+		seen := map[uint32]bool{}
+		for parent != 0 && parent != hostPID && !seen[parent] {
+			seen[parent] = true
+			parent = rows[parent].ParentProcessID
+		}
+		if parent == hostPID {
+			if id, ok := session.IdentifyProcess(pid); ok {
+				ids = append(ids, id)
 			}
-			pid = 0
 		}
 	}
 	return ids

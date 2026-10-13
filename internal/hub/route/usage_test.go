@@ -8,6 +8,27 @@ import (
 
 func near(a *float64, want float64) bool { return a != nil && math.Abs(*a-want) < 0.0001 }
 
+func TestGPT61SolPricing(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		long bool
+		want float64
+	}{
+		{"standard", false, 14.6}, // 2 + 0.1 + 2.5 + 10
+		{"long", true, 24.2},      // 4 + 0.2 + 5 + 15
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := priceUsage(nodeUsage{Buckets: []usageBucket{{
+				Model: "gpt-6.1-sol", Long: tc.long,
+				Input: 1_000_000, Cached: 1_000_000, Write5m: 1_000_000, Output: 1_000_000,
+			}}}, defaultPrices)
+			if !near(got.Cost, tc.want) || len(got.Unpriced) != 0 {
+				t.Fatalf("want cost %v with no unpriced models, got %+v", tc.want, got)
+			}
+		})
+	}
+}
+
 // The token counts of Claude Code's own cost-state record for a run of this
 // repository's conversation (2026-09-26): Claude Code said $5.7913094.
 func TestPriceMatchesClaudeCode(t *testing.T) {

@@ -9,7 +9,7 @@
 帮用户把 termhub 部署起来：
 
 - 一台 Linux Docker 主机上跑 Hub；
-- 一台或几台 Windows 电脑装上 agent；
+- 一台或几台 Windows 电脑装上 agent（Linux 节点按 [Linux 节点](Linux节点.md) 安装，同样遵守本文的安全规则）；
 - 最后用户能在浏览器里打开 Windows 上的终端和 AI CLI。
 
 人类的完整步骤在 [docs/部署指南.md](部署指南.md)。本文在它的基础上规定你该怎么做、哪些事必须交给用户。

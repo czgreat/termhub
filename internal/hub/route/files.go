@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"termhub/internal/hub/auth"
@@ -104,7 +105,15 @@ func (h *Hub) registerFiles(mux *http.ServeMux) {
 func pathOf(p map[string]any) string {
 	s, _ := p["path"].(string)
 	if n, _ := p["name"].(string); n != "" {
-		s += `\` + n
+		s = joinNodePath(s, n)
 	}
 	return s
+}
+
+// joinNodePath joins a node's folder and a name with that node's separator.
+func joinNodePath(dir, name string) string {
+	if posixPath(dir) {
+		return strings.TrimSuffix(dir, "/") + "/" + name
+	}
+	return dir + `\` + name
 }

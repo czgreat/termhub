@@ -39,17 +39,18 @@ type transferTicket struct {
 }
 
 type upload struct {
-	mu     sync.Mutex
-	ws     *websocket.Conn
-	userID int64
-	nodeID int64
-	next   int64
-	size   int64
-	path   string
-	timer  *time.Timer
-	quote  string // set for "paste into terminal": how to quote the path when typing it
-	kind   string // the profile kind of that session ("claude": images go through the clipboard)
-	sid    string // nonempty for a paste: its permission and typist can change
+	egressEpoch uint64
+	mu          sync.Mutex
+	ws          *websocket.Conn
+	userID      int64
+	nodeID      int64
+	next        int64
+	size        int64
+	path        string
+	timer       *time.Timer
+	quote       string // set for "paste into terminal": how to quote the path when typing it
+	kind        string // the profile kind of that session ("claude": images go through the clipboard)
+	sid         string // nonempty for a paste: its permission and typist can change
 }
 
 // isImageFile: the node named the file by its sniffed content (fs.BeginPaste);
@@ -72,7 +73,13 @@ func pasteText(path, style string) string {
 	case "single":
 		path = `'` + path + `'`
 	default: // auto
-		if strings.ContainsAny(path, " \t") {
+		if posixPath(path) {
+			// A Linux node's shell expands $ and ` inside double quotes;
+			// single quotes keep everything literal.
+			if strings.ContainsAny(path, " \t'\"$`\\!*?[]{}()<>|&;#~") {
+				path = "'" + strings.ReplaceAll(path, "'", `'\''`) + "'"
+			}
+		} else if strings.ContainsAny(path, " \t") {
 			path = `"` + path + `"`
 		}
 	}
@@ -133,17 +140,30 @@ func (h *Hub) openTransfer(nodeID int64, m *proto.Msg) (*websocket.Conn, *proto.
 	if n == nil {
 		return nil, nil, ErrNodeOffline
 	}
+	if m.Dir == proto.DirUp || m.Dir == proto.DirPaste {
+		epoch, err := h.egressEpoch(nodeID)
+		if err != nil {
+			return nil, nil, err
+		}
+		m.EgressEpoch = epoch
+	}
 	tk := &transferTicket{nodeID: nodeID, conn: make(chan *websocket.Conn, 1)}
 	m.T, m.Ticket = proto.MsgTransferOpen, randomID()
 	h.xfer.mu.Lock()
 	h.xfer.tickets[m.Ticket] = tk
 	h.xfer.mu.Unlock()
 	defer func() { h.xfer.mu.Lock(); delete(h.xfer.tickets, m.Ticket); h.xfer.mu.Unlock() }()
-	if !n.sendMsg(m) {
+	rejected := make(chan struct{}, 1)
+	if !n.sendChecked(m, func() { rejected <- struct{}{} }) {
+		if mutates(m) && !h.Egress.Allows(nodeID, m.EgressEpoch) {
+			return nil, nil, ErrEgress
+		}
 		return nil, nil, ErrNodeOffline
 	}
 	var ws *websocket.Conn
 	select {
+	case <-rejected:
+		return nil, nil, ErrEgress
 	case ws = <-tk.conn:
 	case <-time.After(20 * time.Second):
 		return nil, nil, &auth.Error{Code: "node_timeout", Msg: "节点没有建立传输连接", Status: 504}
@@ -239,14 +259,15 @@ func (h *Hub) registerTransfers(mux *http.ServeMux) {
 		if !h.xfer.acquire(id.User.ID, nodeID) {
 			return ErrTransferLimit
 		}
-		ws, first, err := h.openTransfer(nodeID, &proto.Msg{Dir: proto.DirUp, Path: in.Dir, Name: in.Name, Size: in.Size, Mode: in.Conflict})
+		request := &proto.Msg{Dir: proto.DirUp, Path: in.Dir, Name: in.Name, Size: in.Size, Mode: in.Conflict}
+		ws, first, err := h.openTransfer(nodeID, request)
 		if err != nil {
 			h.xfer.release(id.User.ID, nodeID)
-			h.web.S.Audit(&id.User, id.IP, "fs_upload", in.Dir+`\`+in.Name, errCode(err), "")
+			h.web.S.Audit(&id.User, id.IP, "fs_upload", joinNodePath(in.Dir, in.Name), errCode(err), "")
 			return err
 		}
 		uid := randomID()
-		u := &upload{ws: ws, userID: id.User.ID, nodeID: nodeID, size: in.Size, path: first.Path}
+		u := &upload{egressEpoch: request.EgressEpoch, ws: ws, userID: id.User.ID, nodeID: nodeID, size: in.Size, path: first.Path}
 		u.timer = time.AfterFunc(uploadIdle, func() { h.endUpload(uid, true) })
 		h.xfer.mu.Lock()
 		h.xfer.uploads[uid] = u
@@ -350,7 +371,7 @@ func (h *Hub) registerTransfers(mux *http.ServeMux) {
 			if u.kind == "claude" && isImageFile(done.Path) {
 				if n := h.nodeConn(u.nodeID); n != nil {
 					payload, _ := json.Marshal(map[string]string{"path": done.Path})
-					if _, err := n.request(&proto.Msg{T: proto.MsgClipboard, Payload: payload}, 15*time.Second); err == nil {
+					if _, err := n.request(&proto.Msg{T: proto.MsgClipboard, Payload: payload, EgressEpoch: u.egressEpoch}, 15*time.Second); err == nil {
 						out["keys"] = "\x1bv"
 						writeJSON(w, out)
 						return nil
@@ -397,13 +418,14 @@ func (h *Hub) registerTransfers(mux *http.ServeMux) {
 		if in.Image {
 			mode = "image"
 		}
-		ws, _, err := h.openTransfer(row.NodeID, &proto.Msg{Dir: proto.DirPaste, SID: &sid, Name: in.Name, Size: in.Size, Mode: mode})
+		request := &proto.Msg{Dir: proto.DirPaste, SID: &sid, Name: in.Name, Size: in.Size, Mode: mode}
+		ws, _, err := h.openTransfer(row.NodeID, request)
 		if err != nil {
 			h.xfer.release(id.User.ID, row.NodeID)
 			return err
 		}
 		uid := randomID()
-		u := &upload{ws: ws, userID: id.User.ID, nodeID: row.NodeID, size: in.Size, path: "paste:" + row.SID, quote: style, kind: kind, sid: row.SID}
+		u := &upload{egressEpoch: request.EgressEpoch, ws: ws, userID: id.User.ID, nodeID: row.NodeID, size: in.Size, path: "paste:" + row.SID, quote: style, kind: kind, sid: row.SID}
 		u.timer = time.AfterFunc(uploadIdle, func() { h.endUpload(uid, true) })
 		h.xfer.mu.Lock()
 		h.xfer.uploads[uid] = u
@@ -541,6 +563,9 @@ func (h *Hub) registerTransfers(mux *http.ServeMux) {
 func (h *Hub) uploadAllowed(id *auth.Identity, u *upload) error {
 	if !h.reg.CanUseNode(id, u.nodeID) {
 		return ErrNotFound
+	}
+	if !h.Egress.Allows(u.nodeID, u.egressEpoch) {
+		return ErrEgress
 	}
 	if u.sid != "" {
 		row, err := h.reg.session(u.sid)

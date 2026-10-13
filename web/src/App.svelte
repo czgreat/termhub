@@ -10,6 +10,7 @@
   import { usageTip } from './lib/usage'
   import { terms } from './lib/terms'
   import { del } from './lib/api'
+  import { baseName } from './lib/nodepath'
   import { reverify, submitReverify, cancelReverify } from './lib/reverify.svelte'
   import Login from './components/Login.svelte'
   import Sidebar from './components/Sidebar.svelte'
@@ -123,7 +124,7 @@
   function title(sid: string) {
     const s = sessionOf(sid)
     if (!s) return sid.slice(0, 8)
-    const name = plainTitle(s.title) ||`${s.profile_name} · ${s.cwd.split('\\').pop() || s.cwd}`
+    const name = plainTitle(s.title) ||`${s.profile_name} · ${baseName(s.cwd)}`
     return app.ended[sid] ? `${name}（已结束）` : name
   }
 

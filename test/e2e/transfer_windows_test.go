@@ -9,8 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,26 +17,6 @@ import (
 
 	"termhub/internal/hub/route"
 )
-
-func (w *world) raw(method, path string, body []byte, hdr map[string]string) (int, []byte, http.Header) {
-	w.t.Helper()
-	req, _ := http.NewRequest(method, w.base+path, bytes.NewReader(body))
-	req.Header.Set("Origin", w.base)
-	req.Header.Set("X-TH-CSRF", w.csrf)
-	for k, v := range hdr {
-		req.Header.Set(k, v)
-	}
-	resp, err := w.client.Do(req)
-	if err != nil {
-		return 0, nil, nil // an aborted download surfaces here
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return 0, b, resp.Header
-	}
-	return resp.StatusCode, b, resp.Header
-}
 
 // upload drives the chunked upload API the way the browser will.
 func (w *world) upload(dir, name string, data []byte, conflict, sha string) (int, map[string]any) {
@@ -182,5 +160,3 @@ func TestUploadAndDownload(t *testing.T) {
 }
 
 func waitABit() { time.Sleep(100 * time.Millisecond) }
-
-func hashOf(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }

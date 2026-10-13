@@ -4,6 +4,7 @@
 import { get, setCSRF, onUnauthorized, ApiError, type Me, type Node, type Profile, type Session } from './api'
 import type { Menu } from './menu'
 import type { Usage } from './usage'
+import { mergeEgress } from './egress'
 
 export type Pane = { tabs: string[]; active: string }
 export type Split = 'none' | 'row' | 'col'
@@ -189,10 +190,14 @@ export const focusedSid = () => app.panes[app.focus]?.active ?? ''
 export const otherPane = () => (app.split === 'none' || app.panes.length < 2 ? -1 : 1 - app.focus)
 
 let listRequest = 0
+const egressEvents = new Map<number, number>()
+const egressValues = new Map<number, Node['egress']>()
+let egressEvent = 0
 export async function refreshLists() {
   if (!app.me || app.me.pending.length) return
   const asked = uid
   const request = ++listRequest
+  const egressAsked = egressEvent
   const [n, p, s] = await Promise.all([get('/api/nodes'), get('/api/profiles'), get('/api/sessions')])
   // Another user logged in meanwhile: this answer (an administrator's profiles
   // carry their environment) is not theirs (第二轮复核 1).
@@ -201,7 +206,7 @@ export async function refreshLists() {
   // than the lists come back, every answer but the last may be stale (状态点复核 3).
   if (request !== listRequest) { for (const row of s.sessions ?? []) if (busyTitle(row.title)) wasBusy[row.sid] = true; return }
   const before = app.sessions
-  app.nodes = n.nodes ?? []
+  app.nodes = mergeEgress(n.nodes ?? [], [...egressValues].map(([id, egress]) => ({ id, egress } as Node)), egressEvents, egressAsked)
   app.profiles = p.profiles ?? []
   app.sessions = s.sessions ?? []
   for (const running of app.sessions) delete app.ended[running.sid]
@@ -249,6 +254,7 @@ export function connectEvents() {
     heard = Date.now()
     const m = JSON.parse(e.data)
     switch (m.t) {
+      case 'egress_status': egressValues.set(m.payload?.node_id, m.payload?.status); egressEvents.set(m.payload?.node_id, ++egressEvent); app.nodes = app.nodes.map(n => n.id === m.payload?.node_id ? { ...n, egress: m.payload.status } : n); break
       case 'sessions_changed': case 'node_status': case 'session_exited': refreshLists(); break
       case 'auth_expired': app.authExpired = true; app.me = null; break
     }

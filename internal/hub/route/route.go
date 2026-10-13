@@ -34,10 +34,12 @@ type route struct {
 
 // attachment is one browser viewing the session.
 type attachment struct {
-	rt   *route
-	ws   *wsConn
-	id   *auth.Identity
-	name string // device label shown to the other viewers
+	egressMu   sync.Mutex
+	egressLast string
+	rt         *route
+	ws         *wsConn
+	id         *auth.Identity
+	name       string // device label shown to the other viewers
 
 	mu         sync.Mutex
 	next       uint64 // next offset this viewer needs
@@ -357,9 +359,21 @@ func (h *Hub) ServeSession(w http.ResponseWriter, r *http.Request) {
 			if m.ID == 0 || proto.CheckBrowserInput(m.Data) != nil {
 				return
 			}
-			code := a.queueInput(m.Data)
-			a.sendMsg(&proto.Msg{T: proto.MsgInputResult, Re: m.ID, Code: code})
+			if h.Egress.Status(rt.nodeID) != nil {
+				code := a.queueInputTracked(m.Data, m.EgressEpoch, false, m.ID)
+				if code != "" {
+					a.sendMsg(&proto.Msg{T: proto.MsgInputResult, Re: m.ID, Code: code})
+				}
+			} else {
+				code := a.queueInput(m.Data)
+				a.sendMsg(&proto.Msg{T: proto.MsgInputResult, Re: m.ID, Code: code})
+			}
+		case "interrupt":
+			if code := a.queueInputEpoch([]byte{3}, 0, true); code != "" {
+				a.sendMsg(&proto.Msg{T: proto.MsgErr, Code: code})
+			}
 		case proto.MsgAttach:
+			a.egressStatus()
 			a.mu.Lock()
 			a.cols, a.rows = m.Cols, m.Rows
 			a.replaying, a.held = true, nil
@@ -466,7 +480,12 @@ func (h *Hub) typist(row SessionRow) int64 {
 
 // Queue admission only, not an acknowledgement that the program consumed input.
 // Hold the driver lock through enqueue so a takeover cannot split that decision.
-func (a *attachment) queueInput(data []byte) string {
+func (a *attachment) queueInput(data []byte) string { return a.queueInputEpoch(data, 0, false) }
+
+func (a *attachment) queueInputEpoch(data []byte, epoch uint64, interrupt bool) string {
+	return a.queueInputTracked(data, epoch, interrupt, 0)
+}
+func (a *attachment) queueInputTracked(data []byte, epoch uint64, interrupt bool, batchID uint64) string {
 	rt := a.rt
 	rt.mu.Lock()
 	driver := rt.owner
@@ -482,12 +501,39 @@ func (a *attachment) queueInput(data []byte) string {
 		rt.mu.Unlock()
 		return proto.ErrNodeOffline
 	}
+	if !interrupt && !rt.hub.Egress.Allows(rt.nodeID, epoch) {
+		rt.mu.Unlock()
+		return ErrEgress.Code
+	}
 	f, err := proto.AppendFrame(nil, proto.Frame{Type: proto.TypeInput, SID: rt.sid, Data: data})
 	if err != nil {
 		rt.mu.Unlock()
 		return proto.ErrInputOverflow
 	}
-	ok := n.ws.send(websocket.BinaryMessage, f)
+	var check func() bool
+	var reject func()
+	var written func(bool)
+	if batchID != 0 {
+		written = func(ok bool) {
+			code := ""
+			if !ok {
+				code = "unknown"
+			}
+			a.sendMsg(&proto.Msg{T: proto.MsgInputResult, Re: batchID, Code: code})
+		}
+	}
+	if !interrupt {
+		check = func() bool { return rt.hub.Egress.Allows(rt.nodeID, epoch) }
+		reject = func() {
+			if batchID != 0 {
+				a.sendMsg(&proto.Msg{T: proto.MsgInputResult, Re: batchID, Code: ErrEgress.Code})
+			} else {
+				a.sendMsg(&proto.Msg{T: proto.MsgErr, Code: "egress_input_dropped"})
+			}
+			a.egressStatus()
+		}
+	}
+	ok := n.ws.sendTracked(websocket.BinaryMessage, f, check, reject, written)
 	rt.mu.Unlock()
 	if !ok {
 		return proto.ErrInputOverflow

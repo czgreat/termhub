@@ -1,5 +1,3 @@
-//go:build windows
-
 package host
 
 import (
@@ -18,8 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Microsoft/go-winio"
-
 	"termhub/internal/proto"
 	"termhub/internal/session"
 )
@@ -31,8 +27,8 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	testcli = filepath.Join(dir, "testcli.exe")
-	gobin := filepath.Join(runtime.GOROOT(), "bin", "go.exe")
+	testcli = filepath.Join(dir, "testcli"+exeSuffix)
+	gobin := filepath.Join(runtime.GOROOT(), "bin", "go"+exeSuffix)
 	if _, err := os.Stat(gobin); err != nil {
 		gobin = "go"
 	}
@@ -47,7 +43,7 @@ func TestMain(m *testing.M) {
 
 func startHost(t *testing.T, tick time.Duration) (*Host, string) {
 	t.Helper()
-	pipe := fmt.Sprintf(`\\.\pipe\termhub-test-%d-%d`, os.Getpid(), time.Now().UnixNano())
+	pipe := testPipe(t, fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano()))
 	h, err := New(Config{PipeName: pipe, StateDir: t.TempDir(), Tick: tick, IdleExit: time.Hour,
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
@@ -70,7 +66,7 @@ type agent struct {
 func dial(t *testing.T, pipe string) *agent {
 	t.Helper()
 	d := 5 * time.Second
-	conn, err := winio.DialPipe(pipe, &d)
+	conn, err := Dial(pipe, d)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +355,7 @@ func TestMalformedInputKeepsHost(t *testing.T) {
 		{0, 0, 0, 5, 0x10, '{', '{', '{', 0}, // control frame that is not JSON
 		{0, 0, 0, 2, 0x01, 0x00},             // truncated output frame
 	} {
-		c, err := winio.DialPipe(pipe, &d)
+		c, err := Dial(pipe, d)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -391,7 +387,7 @@ func TestShutdownRules(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("host did not stop")
 	}
-	if out, _ := exec.Command("tasklist", "/FI", "IMAGENAME eq testcli.exe", "/FO", "CSV", "/NH").Output(); bytes.Contains(out, []byte(filepath.Base(testcli))) {
+	if out := runningTestcli(); out != "" {
 		// Other tests run sessions too, but not in parallel with this one.
 		t.Fatalf("testcli still running after shutdown:\n%s", out)
 	}
@@ -419,7 +415,7 @@ func TestReapLeftovers(t *testing.T) {
 	b, _ := json.Marshal(stateFile{Sessions: []stateSession{{SID: proto.NewSID().String(), Procs: []session.ProcID{vid, bid}}}})
 	os.WriteFile(filepath.Join(dir, "state.json"), b, 0o600)
 
-	pipe := fmt.Sprintf(`\\.\pipe\termhub-test-reap-%d`, time.Now().UnixNano())
+	pipe := testPipe(t, fmt.Sprintf("reap-%d", time.Now().UnixNano()))
 	h, err := New(Config{PipeName: pipe, StateDir: dir, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {
 		t.Fatal(err)

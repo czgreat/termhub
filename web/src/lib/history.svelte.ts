@@ -2,6 +2,7 @@
 // CLI's own files read-only; the Hub adds which ones this user hid and which
 // are open in a session. Lists are cached per profile and refreshed on demand.
 import { get, put, del, post } from './api'
+import { isPosix, posixClean, sepOf } from './nodepath'
 import { app, openSession, refreshLists, toast, onUserChange } from './state.svelte'
 
 export type Conv = { id: string; cwd: string; title?: string; first?: string; last?: string; created: number; updated: number; size: number
@@ -183,8 +184,9 @@ export async function readTranscript(profileId: number, id: string, before?: num
   return get(`/api/profiles/${profileId}/history/${encodeURIComponent(id)}${before ? '?before=' + before : ''}`)
 }
 
-/** Folder identity on Windows, as the Hub normalises it: case, either separator, doubled or trailing ones do not matter. */
-export const folderKey = (cwd: string) => cwd.toLowerCase().replace(/\//g, '\\').replace(/^\\\\\?\\/, '').replace(/\\{2,}/g, '\\').replace(/\\+$/, '')
+/** Folder identity, exactly as the Hub's normFolder (internal/hub/route/registry.go): on Windows case, either separator, doubled or
+ * trailing ones do not matter; on Linux the case does, and . and .. are resolved. */
+export const folderKey = (cwd: string) => isPosix(cwd) ? posixClean(cwd) : cwd.toLowerCase().replace(/\//g, '\\').replace(/^\\\\\?\\/, '').replace(/\\{2,}/g, '\\').replace(/\\+$/, '')
 const base = (cwd: string) => cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd
 
 
@@ -388,7 +390,7 @@ export function machines(query: string): Machine[] {
     const paths = new Map<string, Set<string>>()
     for (const f of m.folders) paths.set(f.name, (paths.get(f.name) ?? new Set()).add(folderKey(f.cwd)))
     for (const f of m.folders) if ((seen.get(f.name) ?? 0) > 1 && (paths.get(f.name)?.size ?? 0) > 1 && f.cwd && !hist.byProfile[f.profileId]?.data?.folder_names?.[folderKey(f.cwd)]) {
-      f.name = f.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).slice(-2).join('\\')
+      f.name = f.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).slice(-2).join(sepOf(f.cwd))
     }
     m.folders.sort((a, b) => b.updated - a.updated)
     m.updated = m.folders[0]?.updated ?? 0

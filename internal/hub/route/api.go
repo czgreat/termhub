@@ -62,6 +62,7 @@ func (h *Hub) Register(mux *http.ServeMux) {
 		}
 		for i := range nodes {
 			nodes[i].Online = h.Online(nodes[i].ID)
+			nodes[i].Egress = h.Egress.Status(nodes[i].ID)
 		}
 		writeJSON(w, map[string]any{"nodes": nodes})
 		return nil

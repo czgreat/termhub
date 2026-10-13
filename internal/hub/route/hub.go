@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"termhub/internal/egress"
 	"termhub/internal/hub/auth"
 	"termhub/internal/proto"
 )
@@ -24,6 +25,7 @@ type Limits struct {
 
 // Hub routes terminal sessions between browsers and nodes.
 type Hub struct {
+	Egress *egress.Monitor // fixed at startup; no policy from browsers or node self-report
 	reg    *Registry
 	web    *auth.HTTP
 	log    *slog.Logger
@@ -98,11 +100,28 @@ func (h *Hub) ServeNode(w http.ResponseWriter, r *http.Request) {
 }
 
 func (n *nodeConn) sendMsg(m *proto.Msg) bool {
+	return n.sendChecked(m, nil)
+}
+func (n *nodeConn) sendChecked(m *proto.Msg, rejected func()) bool {
+	var check func() bool
+	if mutates(m) {
+		epoch, err := n.hub.egressEpoch(n.node.ID)
+		if err != nil {
+			if rejected != nil {
+				rejected()
+			}
+			return false
+		}
+		if m.EgressEpoch != 0 {
+			epoch = m.EgressEpoch
+		}
+		check = func() bool { return n.hub.Egress.Allows(n.node.ID, epoch) }
+	}
 	b, err := proto.EncodeMsg(m)
 	if err != nil {
 		return false
 	}
-	if !n.ws.send(websocket.TextMessage, b) {
+	if !n.ws.sendChecked(websocket.TextMessage, b, check, rejected) {
 		n.ws.close() // a node that cannot take control traffic is broken
 		return false
 	}
@@ -111,6 +130,18 @@ func (n *nodeConn) sendMsg(m *proto.Msg) bool {
 
 // request sends m and waits for the node's answer.
 func (n *nodeConn) request(m *proto.Msg, timeout time.Duration) (*proto.Msg, error) {
+	if mutates(m) {
+		epoch, err := n.hub.egressEpoch(n.node.ID)
+		if err != nil {
+			return m.Fail(ErrEgress.Code, ErrEgress.Msg), err
+		}
+		if m.EgressEpoch == 0 {
+			m.EgressEpoch = epoch
+		}
+		if !n.hub.Egress.Allows(n.node.ID, m.EgressEpoch) {
+			return m.Fail(ErrEgress.Code, ErrEgress.Msg), ErrEgress
+		}
+	}
 	ch := make(chan *proto.Msg, 1)
 	n.mu.Lock()
 	n.nextID++
@@ -128,8 +159,28 @@ func (n *nodeConn) request(m *proto.Msg, timeout time.Duration) (*proto.Msg, err
 	}
 	n.mu.Unlock()
 	defer func() { n.mu.Lock(); delete(n.pending, m.ID); n.mu.Unlock() }()
-	if !n.sendMsg(m) {
-		return nil, ErrNodeOffline
+	reject := func() {
+		if m.T == proto.MsgCreate && m.SID != nil {
+			n.mu.Lock()
+			delete(n.creates, m.ID)
+			delete(n.creating, *m.SID)
+			n.mu.Unlock()
+			// Writer rejection can arrive after request timeout: resolve the DB reservation too.
+			n.hub.reg.db.Exec(`UPDATE sessions SET ended_at=?,end_reason='start_failed' WHERE sid=? AND end_reason IN ('starting','start_unknown')`, time.Now().Unix(), m.SID.String())
+			n.hub.broadcastSessions()
+		}
+		select {
+		case ch <- m.Fail(ErrEgress.Code, ErrEgress.Msg):
+		default:
+		}
+	}
+	if !n.sendChecked(m, reject) {
+		select {
+		case r := <-ch:
+			return r, ErrEgress
+		default:
+			return nil, ErrNodeOffline
+		}
 	}
 	select {
 	case r := <-ch:
@@ -506,6 +557,9 @@ type NewSession struct {
 func (h *Hub) CreateSession(id *auth.Identity, in NewSession) (SessionRow, error) {
 	p, err := h.reg.profileFor(id, in.ProfileID)
 	if err != nil {
+		return SessionRow{}, err
+	}
+	if _, err := h.egressEpoch(p.NodeID); err != nil {
 		return SessionRow{}, err
 	}
 	mode, conv := in.Mode, in.Conv

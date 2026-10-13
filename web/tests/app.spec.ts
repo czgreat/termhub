@@ -131,8 +131,8 @@ test('first login, node enrolment, new project, terminal, reload, end', async ({
   await page.getByRole('button', { name: '确认' }).click()
   await expect(page.getByText('再次验证')).toBeHidden()
   const enrolLine = (await page.getByTestId('reveal').nth(1).textContent())!
-  const token = /--token (\S+)/.exec(enrolLine)![1]
-  expect(enrolLine).toContain('--pin ' + pin)
+  const token = /-Token (\S+)/.exec(enrolLine)![1]
+  expect(enrolLine).toContain('-Pin ' + pin)
   await page.getByRole('button', { name: '已记下' }).click()
 
   // Enrol and start a real agent, exactly as the shown command says.
@@ -746,5 +746,28 @@ test.describe('phone', () => {
     await saved.locator(':scope > summary').click()
     await saved.getByText('review14-ended', { exact: true }).click()
     await expect(saved.getByLabel('保存的草稿')).toHaveValue('edited saved draft')
+
+    // Egress UI on a phone: only mock this browser's readonly node-list response.
+    // No real gateway request or fault injection; server admission is covered in Go.
+    await page.route('**/api/nodes', async route => {
+      const response = await route.fetch()
+      const data = await response.json()
+      data.nodes = data.nodes.map((n: any) => ({ ...n, egress: {
+        state: 'unknown', expected_ip: '203.0.113.1', observed_ip: '203.0.113.1',
+        checked_at: 1, valid_until: 2, epoch: 1, allowed: true, reason: 'old snapshot',
+      } }))
+      await route.fulfill({ response, json: data })
+    })
+    await page.reload()
+    await page.getByTestId('drawer-open').click()
+    const nodeToggle = page.getByTestId('nodes-toggle')
+    if (await nodeToggle.getAttribute('aria-expanded') !== 'true') await nodeToggle.click()
+    const egress = page.locator('aside details.egress').first()
+    await expect(egress.locator('summary')).toContainText('暂停操作')
+    await egress.locator('summary').click()
+    await expect(egress).toContainText('203.0.113.1')
+    await page.getByTestId('new-session').click()
+    await expect(page.getByTestId('start-session')).toBeDisabled()
+
   })
 })

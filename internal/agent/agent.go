@@ -1,5 +1,3 @@
-//go:build windows
-
 // Package agent is the networked half of termhub-agent (docs/M5): it connects
 // outwards to the Hub, connects to the local session host, and carries
 // messages and terminal data between the two. It holds no session state of its
@@ -8,9 +6,7 @@ package agent
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"errors"
 	"log/slog"
 	"math/rand/v2"
@@ -22,11 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Microsoft/go-winio"
 	"github.com/gorilla/websocket"
-	"golang.org/x/sys/windows/registry"
 
 	"termhub/internal/agent/fs"
+	"termhub/internal/host"
 	"termhub/internal/proto"
 )
 
@@ -82,22 +77,6 @@ func New(cfg Config) *Agent {
 	return &Agent{cfg: cfg, hostOut: make(chan []byte, 4096), pending: map[uint64]uint64{}, forwarded: map[proto.SID]bool{}}
 }
 
-// Fingerprint identifies this Windows installation without revealing the
-// underlying identifier (docs/总体设计 8.3).
-func Fingerprint() string {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\Cryptography`, registry.QUERY_VALUE|registry.WOW64_64KEY)
-	if err != nil {
-		return ""
-	}
-	defer k.Close()
-	guid, _, err := k.GetStringValue("MachineGuid")
-	if err != nil {
-		return ""
-	}
-	sum := sha256.Sum256([]byte("termhub:" + guid))
-	return hex.EncodeToString(sum[:])
-}
-
 // Run keeps both links up until ctx ends. It never gives up on the Hub.
 func (a *Agent) Run(ctx context.Context) {
 	go a.hostLoop(ctx)
@@ -137,8 +116,7 @@ func (*unauthorizedError) Error() string { return "hub refused the node token" }
 
 func (a *Agent) hostLoop(ctx context.Context) {
 	for ctx.Err() == nil {
-		d := 2 * time.Second
-		conn, err := winio.DialPipe(a.cfg.PipeName, &d)
+		conn, err := host.Dial(a.cfg.PipeName, 2*time.Second)
 		if err != nil {
 			if a.cfg.StartHost != nil {
 				if e := a.cfg.StartHost(); e != nil {
@@ -345,15 +323,15 @@ func (a *Agent) hubSession(ctx context.Context) error {
 	}()
 	ws.SetReadLimit(proto.MaxFrame + 64)
 
-	host, _ := os.Hostname()
+	name, _ := os.Hostname()
 	if a.cfg.NodeName != "" {
-		host = a.cfg.NodeName
+		name = a.cfg.NodeName
 	}
 	a.mu.Lock()
 	hostVer := a.hostVer
 	a.mu.Unlock()
 	hello, _ := proto.EncodeMsg(&proto.Msg{T: proto.MsgHello, ID: 1, Proto: proto.Current.String(), AgentVer: Version,
-		HostVer: hostVer, Name: host, Fingerprint: Fingerprint()})
+		HostVer: hostVer, Name: name, Fingerprint: Fingerprint(), OSBuild: osBuild()})
 	if err := ws.WriteMessage(websocket.TextMessage, hello); err != nil {
 		return err
 	}

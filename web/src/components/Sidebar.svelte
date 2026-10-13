@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import EgressBadge from './EgressBadge.svelte'
   import { app, openSession, toast, isActive, plainTitle } from '../lib/state.svelte'
   import StatusDot from '../lib/StatusDot.svelte'
   import UsageBadge from '../lib/UsageBadge.svelte'
@@ -61,6 +62,7 @@
         <span class="nname">{n.name}</span>
         {#if n.pwsh_store}<span class="warn" title="这台机器的 pwsh 是商店版，无人登录时无法启动；请安装 MSI 版">⚠</span>{/if}
       </div>
+      <EgressBadge status={n.egress} />
     {:else}
       <p class="empty">还没有可用的节点。</p>
     {/each}

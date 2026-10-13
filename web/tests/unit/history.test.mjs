@@ -36,6 +36,19 @@ function put(sid, t) {
 const H = await import('../../src/lib/history.svelte.ts')
 const { hist } = H
 
+// The same cases as TestPosixFolders (internal/hub/route/posix_test.go): the
+// browser's key and the Hub's must agree for both kinds of node, or the
+// "latest" map, folder names and hidden folders miss each other.
+test('folderKey matches the Hub for Linux and Windows folders', () => {
+  for (const [input, want] of [
+    ['/home/Alice/claudeproject/', '/home/Alice/claudeproject'],
+    ['/home//Alice/./work/../work', '/home/Alice/work'],
+    ['/', '/'],
+    ['C:\\Users\\Me\\Proj\\', 'c:\\users\\me\\proj'],
+    ['C:/Users/Me', 'c:\\users\\me'],
+  ]) assert.equal(H.folderKey(input), want, input)
+})
+
 const list = (items, extra = {}) => ({ items, scanned: items.length, failed: 0, incomplete: false, fallback: false, hidden: 0, running: [], ...extra })
 const conv = (id, cwd, updated = 100) => ({ id, cwd, title: id, created: updated, updated, size: 1 })
 const profile = (id, node = 1, kind = 'claude') => ({ id, node_id: node, name: 'p' + id, kind })

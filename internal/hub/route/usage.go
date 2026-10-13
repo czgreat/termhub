@@ -51,6 +51,8 @@ var defaultPrices = map[string]Price{
 	"claude-sonnet-4-6": {Input: 3, Cached: 0.3, Write5m: 3.75, Write1h: 6, Output: 15, Window: 1_000_000},
 	"claude-haiku-4-5":  {Input: 1, Cached: 0.1, Write5m: 1.25, Write1h: 2, Output: 5, Window: 200_000},
 
+	// Checked 2026-09-29: https://developers.openai.com/api/docs/models/gpt-6.1-sol
+	"gpt-6.1-sol":   {Input: 2, Cached: 0.1, Write5m: 2.5, Output: 10, Long: &Price{Input: 4, Cached: 0.2, Write5m: 5, Output: 15}},
 	"gpt-6-astra":   {Input: 10, Cached: 1, Write5m: 12.5, Output: 50, Long: &Price{Input: 20, Cached: 2, Write5m: 25, Output: 75}},
 	"gpt-6-sol":     {Input: 2, Cached: 0.2, Write5m: 2.5, Output: 10, Long: &Price{Input: 4, Cached: 0.4, Write5m: 5, Output: 15}},
 	"gpt-6-luna":    {Input: 0.1, Cached: 0.01, Write5m: 0.125, Output: 0.5, Long: &Price{Input: 0.2, Cached: 0.02, Write5m: 0.25, Output: 0.75}},

@@ -26,6 +26,7 @@
   let link: SessionLink
   let webgl: WebglAddon | null = null
 
+  let egressNotice = $state('')
   let banner = $state(''), bannerKind = $state<'info' | 'warn' | 'bad'>('info')
   let peers = $state(1), sizeBy = $state(''), exited = $state<null | { reason: string; exit_code: number | null }>(null)
   let progress = $state(''), replaying = $state(false), retries = $state(0)
@@ -229,6 +230,8 @@
             if (readOnly) { follows = true; if (m.cols && m.rows) term.resize(m.cols, m.rows); cols = term.cols; rows = term.rows }
             else if (visible) { follows = false; fit.fit(); link.resize(term.cols, term.rows); cols = term.cols; rows = term.rows } // at the keyboard again: this window's size at once
             break
+          case 'egress_status': egressNotice = m.payload && !m.payload.allowed ? m.payload.reason + '。终端保留，恢复后请重新发送。' : ''; break
+          case 'egress_refused': toast('出口保护中或连接中断，输入未发送'); break
           case 'input_readonly': toast(readOnlyText); break
           case 'exited':
             exited = { reason: m.reason, exit_code: m.exit_code ?? null }; bannerKind = 'warn'; replaying = false
@@ -412,7 +415,11 @@
           if (files.length > 1) await new Promise(r => setTimeout(r, 1200))
         } else {
           term.paste(done.insert ?? done.path + ' ')
-          toast(app.profiles.find(p => p.id === session?.profile_id)?.kind === 'claude' && isImage ? '已上传到节点，路径已粘进终端（这台节点的代理没能把图片放进剪贴板，Claude Code 不会把路径当作附件）' : '已上传到节点，路径已粘进终端')
+          // a Linux node has no clipboard to fill (internal/agent/fs/clipboard_linux.go)
+          const linux = String(done.path ?? '').startsWith('/')
+          toast(app.profiles.find(p => p.id === session?.profile_id)?.kind === 'claude' && isImage
+            ? (linux ? '已上传到节点，路径已粘进终端（Linux 节点没有剪贴板：可让 Claude Code 读取这个图片路径）' : '已上传到节点，路径已粘进终端（这台节点的代理没能把图片放进剪贴板，Claude Code 不会把路径当作附件）')
+            : '已上传到节点，路径已粘进终端')
         }
       } catch (e: any) { toast('粘贴失败：' + e.message) }
       finally { progress = '' }
@@ -452,6 +459,11 @@
 </script>
 
 <div class="term-wrap">
+  {#if egressNotice && !exited}
+    <div class="banner warn" role="status">{egressNotice}
+      {#if !readOnly}<button onclick={() => link.interrupt()}>中止当前操作（Ctrl+C）</button>{/if}
+    </div>
+  {/if}
   {#if banner || exited || replaying}
     <div class="banner {bannerKind}" data-testid="banner">
       {#if exited}

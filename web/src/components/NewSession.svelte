@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { egressBlocked } from '../lib/egress'
+  import { egressClock, useEgressClock } from '../lib/egress-clock.svelte'
+  useEgressClock()
+  import EgressBadge from './EgressBadge.svelte'
   // New session (docs/M10 第 2、3 节): a profile, a folder, and how to start:
   // a new conversation, the folder's last one, or the CLI's own picker.
   import { untrack } from 'svelte'
@@ -6,6 +10,7 @@
   import { app, openSession, toast } from '../lib/state.svelte'
   import { hist, load, folderKey, ago, busyElsewhere, fresh, folderLast, openInFolder, folderTaken } from '../lib/history.svelte'
   import DirPicker from './DirPicker.svelte'
+  import { baseName, isPosix, sepOf } from '../lib/nodepath'
 
   let { onclose }: { onclose: () => void } = $props()
   let profileId = $state(app.profiles[0]?.id ?? 0)
@@ -21,9 +26,11 @@
   // their 项目, and the desktop may be shared with others (桌面按钮复核).
   const desktopOk = $derived(!!desktop && (!profile?.my_folders?.length || profile.my_folders.some(f => {
     const k = folderKey(f), d = folderKey(desktop)
-    return d === k || d.startsWith(k + '\\')
+    return d === k || d.startsWith(k.replace(/[\\/]$/, '') + sepOf(k))
   })))
   const node = $derived(app.nodes.find(n => n.id === profile?.node_id))
+  // a Linux node: its folders are /home/..., its quick folder the home folder
+  const posixNode = $derived(isPosix(desktop || profile?.default_cwd || ''))
 
   // Only a different choice of profile resets the folder. The profile list is
   // re-fetched whenever a session or node changes (a new object each time),
@@ -93,17 +100,18 @@
           <option value={p.id}>{app.nodes.find(n => n.id === p.node_id)?.name ?? p.node_id} · {p.name}</option>
         {/each}
       </select>
+      <EgressBadge status={node?.egress} />
       {#if node && !node.online}<p class="err">这个节点当前离线。</p>{/if}
 
       <label for="cwd">工作目录</label>
       <div class="row">
-        <input id="cwd" bind:value={cwd} placeholder="C:\Users\...\项目" />
+        <input id="cwd" bind:value={cwd} placeholder={posixNode ? '/home/.../项目' : 'C:\\Users\\...\\项目'} />
         <button onclick={() => browsing = true} disabled={!node?.online} style="white-space:nowrap;flex:none">浏览…</button>
       </div>
       {#if recent.length || desktopOk}
         <div class="recent">
-          {#if desktopOk}<button class="chip" onclick={() => cwd = desktop} title={desktop} data-testid="cwd-desktop">🖥 桌面</button>{/if}
-          {#each recent as d}<button class="chip" onclick={() => cwd = d} title={d}>{d.split('\\').pop() || d}</button>{/each}
+          {#if desktopOk}<button class="chip" onclick={() => cwd = desktop} title={desktop} data-testid="cwd-desktop">{posixNode ? '🏠 主目录' : '🖥 桌面'}</button>{/if}
+          {#each recent as d}<button class="chip" onclick={() => cwd = d} title={d}>{baseName(d)}</button>{/each}
         </div>
       {/if}
 
@@ -139,7 +147,7 @@
       {#if error}<p class="err">{error}</p>{/if}
       <div class="row" style="justify-content:flex-end;margin-top:14px">
         <button onclick={onclose}>取消</button>
-        <button class="primary" onclick={start} disabled={busy || !cwd || !node?.online} data-testid="start-session">启动</button>
+        <button class="primary" onclick={start} disabled={busy || !cwd || !node?.online || egressBlocked(node?.egress, egressClock.now)} data-testid="start-session">启动</button>
       </div>
     {/if}
   </div>

@@ -115,12 +115,13 @@ type SessionInfo struct {
 // meaningful depends on T. Unknown JSON fields are ignored on decode, so minor
 // versions can add fields freely (docs/M1 5.1, 第 9 节).
 type Msg struct {
-	InputAck bool   `json:"input_ack,omitempty"`
-	Data     []byte `json:"data,omitempty"`
-	T        string `json:"t"`
-	ID       uint64 `json:"id,omitempty"` // set on requests; the peer must answer with Re
-	Re       uint64 `json:"re,omitempty"`
-	SID      *SID   `json:"sid,omitempty"`
+	EgressEpoch uint64 `json:"egress_epoch,omitempty"`
+	InputAck    bool   `json:"input_ack,omitempty"`
+	Data        []byte `json:"data,omitempty"`
+	T           string `json:"t"`
+	ID          uint64 `json:"id,omitempty"` // set on requests; the peer must answer with Re
+	Re          uint64 `json:"re,omitempty"`
+	SID         *SID   `json:"sid,omitempty"`
 
 	Code string `json:"code,omitempty"` // error code on err
 	Text string `json:"msg,omitempty"`

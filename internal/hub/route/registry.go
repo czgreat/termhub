@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"termhub/internal/egress"
 	"termhub/internal/hub/auth"
 	"termhub/internal/hub/store"
 	"termhub/internal/proto"
@@ -34,18 +35,19 @@ var (
 
 // Node is a registered machine.
 type Node struct {
-	ID                  int64  `json:"id"`
-	Name                string `json:"name"`
-	Note                string `json:"note"`
-	Status              string `json:"status"`
-	Online              bool   `json:"online"`
-	FingerprintMismatch bool   `json:"fingerprint_mismatch"`
-	LastSeenAt          int64  `json:"last_seen_at"`
-	AgentVer            string `json:"agent_ver"`
-	HostVer             string `json:"host_ver"`
-	OSBuild             string `json:"os_build"`
-	PwshStore           bool   `json:"pwsh_store"`
-	Position            int    `json:"position"`
+	Egress              *egress.Status `json:"egress,omitempty"`
+	ID                  int64          `json:"id"`
+	Name                string         `json:"name"`
+	Note                string         `json:"note"`
+	Status              string         `json:"status"`
+	Online              bool           `json:"online"`
+	FingerprintMismatch bool           `json:"fingerprint_mismatch"`
+	LastSeenAt          int64          `json:"last_seen_at"`
+	AgentVer            string         `json:"agent_ver"`
+	HostVer             string         `json:"host_ver"`
+	OSBuild             string         `json:"os_build"`
+	PwshStore           bool           `json:"pwsh_store"`
+	Position            int            `json:"position"`
 }
 
 // Profile is a CLI profile (docs/总体设计 第 6 节). Env values are secrets:
@@ -527,13 +529,28 @@ func (r *Registry) SetBindings(actor *auth.Identity, profileID int64, userIDs []
 	return tx.Commit()
 }
 
-// cleanFolders checks a folder range: absolute Windows folders, no trailing
-// separator, no duplicates, a sane number and length.
+// cleanFolders checks a folder range: absolute Windows folders, or absolute
+// POSIX folders of a Linux node; no trailing separator, no duplicates, a sane
+// number and length.
 func cleanFolders(list []string) ([]string, error) {
 	out := []string{}
 	seen := map[string]bool{}
 	for _, f := range list {
-		f = strings.TrimRight(strings.TrimSpace(f), `\/`)
+		f = strings.TrimSpace(f)
+		if posixPath(f) {
+			// Linux: case matters and the separator is /. "." and ".." are
+			// resolved here, so the range is the folder it names.
+			f = path.Clean(f)
+			if len(f) > 1024 || strings.IndexFunc(f, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+				return nil, &auth.Error{Code: "bad_folder", Msg: "文件夹范围要写完整路径，如 /home/me/项目：" + f, Status: 400}
+			}
+			if !seen[f] {
+				seen[f] = true
+				out = append(out, f)
+			}
+			continue
+		}
+		f = strings.TrimRight(f, `\/`)
 		if f == "" {
 			continue
 		}
@@ -616,26 +633,46 @@ func (r *Registry) BindingFolders(profileID int64) (map[int64][]string, error) {
 	return out, rows.Err()
 }
 
-// inFolders: a folder is the range's folder or below it (Windows: any case).
+// inFolders: a folder is the range's folder or below it (Windows: any case;
+// Linux: exact case). A Windows folder is never inside a POSIX range and
+// the other way round.
 func inFolders(cwd string, folders []string) bool {
 	if len(folders) == 0 {
 		return true
 	}
 	c := normFolder(cwd)
-	if c == "" || strings.Contains(c+`\`, `\..\`) {
+	if c == "" || !posixPath(c) && strings.Contains(c+`\`, `\..\`) {
 		return false // unknown, or not a plain absolute folder: not shown
+	}
+	sep := `\`
+	if posixPath(c) {
+		sep = "/"
 	}
 	for _, f := range folders {
 		f = normFolder(f)
-		if c == f || strings.HasPrefix(c, f+`\`) {
+		if c == f || strings.HasPrefix(c, strings.TrimSuffix(f, sep)+sep) {
 			return true
 		}
 	}
 	return false
 }
 
-// normFolder: lower case, backslashes, no \\?\ prefix, no doubled or trailing separators.
+// posixPath tells a Linux node's folder (/home/me) from a Windows one. "//"
+// opens a Windows network path written with forward slashes, which is how it
+// was read before Linux nodes existed.
+func posixPath(s string) bool { return strings.HasPrefix(s, "/") && !strings.HasPrefix(s, "//") }
+
+// normFolder is the key that identifies a folder: one CLI per folder, folder
+// ranges, the history's folder views and its "latest" map. The browser's
+// folderKey (web/src/lib/history.svelte.ts) must give the same key.
+//
+// Windows: lower case, backslashes, no \\?\ prefix, no doubled or trailing
+// separators. Linux: the case is kept (/home/A and /home/a are two folders),
+// slashes, no doubled or trailing separators, . and .. resolved.
 func normFolder(s string) string {
+	if posixPath(s) {
+		return path.Clean(s)
+	}
 	s = strings.ToLower(strings.ReplaceAll(s, `\`, "/"))
 	s = strings.TrimPrefix(s, "//?/")
 	// . and .. resolved as well: C:\work\sub\.. is C:\work (one CLI per folder, folder ranges)

@@ -18,6 +18,27 @@ const maxPendingAge = 60_000 // ms: older input is not sent late
 const maxPause = 500 // ms: the longest pause kept when sending late
 
 export class SessionLink {
+  private egress: { allowed: boolean; epoch: number; valid_until: number } | null = null
+  private egressTimer: number | undefined
+  get egressBlocked() { return !!this.egress && (!this.egress.allowed || Date.now() >= this.egress.valid_until * 1000) }
+  interrupt() { if (!this.closed && !this.readOnly) this.send({ t: 'interrupt' }) }
+  private setEgress(status: any) {
+    clearTimeout(this.egressTimer)
+    const wasBlocked = this.egressBlocked
+    const changed = this.egress?.epoch !== status?.epoch
+    this.egress = status
+    if (!status) return
+    if (changed || (!wasBlocked && this.egressBlocked)) {
+      this.pending = []; this.pendingBytes = 0; this.sentSome = false
+      clearTimeout(this.pumpTimer); this.pumpTimer = undefined
+      this.drops++
+      for (const finish of this.batches.values()) finish('unknown')
+    }
+    if (status.allowed) this.egressTimer = window.setTimeout(() => {
+      this.setEgress({ ...status, allowed: false })
+      this.ev.control({ t: 'egress_status', payload: { ...status, allowed: false, reason: '出口结果已过期' } })
+    }, Math.max(0, status.valid_until * 1000 - Date.now()))
+  }
   private inputAck = false
   private batchID = 0
   private batches = new Map<number, (code: string) => void>()
@@ -67,7 +88,12 @@ export class SessionLink {
         return
       }
       const m: Ctl = JSON.parse(e.data)
-      if (m.t === 'attached') {
+      if (m.t === 'egress_status') {
+        this.setEgress(m.payload)
+      } else if (m.t === 'err' && ['egress_blocked', 'egress_input_dropped'].includes(m.code)) {
+        if (this.egress) this.setEgress({ ...this.egress, allowed: false })
+        if (m.code === 'egress_input_dropped' && !this.blocked) this.drop(true)
+      } else if (m.t === 'attached') {
         this.inputAck = !!m.input_ack
         const a = m as unknown as Attached
         if (a.mode === 'replay') this.have = a.from
@@ -75,6 +101,10 @@ export class SessionLink {
         this.flush()
       } else if (m.t === 'input_result') {
         this.batches.get(m.re)?.(m.code || '')
+        if (m.code === 'egress_blocked' && this.egress) {
+          this.setEgress({ ...this.egress, allowed: false })
+          this.ev.control({ t: 'egress_status', payload: { allowed: false, reason: '出口保护已拒绝输入' } })
+        }
       } else if (m.t === 'gap') {
         this.attach() // ask again from what we have
       } else if (m.t === 'err' && m.code === 'read_only') {
@@ -96,6 +126,7 @@ export class SessionLink {
     }
     ws.onclose = () => {
       this.unknownBatches()
+      if (this.egress) this.setEgress({ ...this.egress, allowed: false })
       this.ws = null
       this.ready = false
       this.ev.state('closed')
@@ -130,6 +161,8 @@ export class SessionLink {
   input(data: string | Uint8Array) {
     const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data
     if (this.closed) return
+    if (this.egress && bytes.length === 1 && bytes[0] === 3) { this.interrupt(); return }
+    if (this.egress && (this.egressBlocked || !this.up)) { this.drops++; this.ev.control({ t: 'egress_refused' }); return }
     if (this.readOnly) { this.ev.control({ t: 'input_readonly' }); return }
     if (this.blocked) { this.ev.control({ t: 'input_blocked' }); return }
     if (this.dropping) return
@@ -153,10 +186,10 @@ export class SessionLink {
   get canSend() { return this.up && !this.refuses && !this.readOnly }
 
   /** Input is refused: a queue was dropped, half sent (until unblock) or overflowing (until attached). */
-  get refuses() { return this.blocked || this.dropping }
+  get refuses() { return this.blocked || this.dropping || this.egressBlocked }
 
   /** The node went away while this link stayed up: input waits for it (the next attach). */
-  nodeOffline() { this.nodeDown = true }
+  nodeOffline() { this.nodeDown = true; if (this.egress) this.setEgress({ ...this.egress, allowed: false }) }
 
   /** The user has looked at the screen after a half-sent queue was dropped: input is taken again. */
   unblock() { this.blocked = false }
@@ -179,7 +212,7 @@ export class SessionLink {
         this.batches.set(id, finish)
         let encoded = ''
         for (const b of piece) encoded += String.fromCharCode(b)
-        try { this.send({ t: 'input_batch', id, data: btoa(encoded) }) } catch { finish('unknown') }
+        try { this.send({ t: 'input_batch', id, data: btoa(encoded), egress_epoch: this.egress?.epoch }) } catch { finish('unknown') }
       })
       if (code) {
         return failed(code === 'unknown' ? 'unknown' : 'rejected')
@@ -193,7 +226,25 @@ export class SessionLink {
 
   private write(bytes: Uint8Array) {
     // docs/M1 第 10 节: one input frame carries at most 64 KiB
-    for (let off = 0; off < bytes.length; off += 65536) this.ws!.send(bytes.subarray(off, off + 65536))
+    for (let off = 0; off < bytes.length; off += 65536) {
+      const piece = bytes.subarray(off, off + 65536)
+      if (this.egress) {
+        if (this.egressBlocked) return
+        let data = ''; for (const b of piece) data += String.fromCharCode(b)
+        if (this.batches.size >= 512) { if (!this.blocked) this.drop(true); return }
+        const id = ++this.batchID
+        const timer = window.setTimeout(() => finish('unknown'), 5000)
+        const finish = (code: string) => {
+          clearTimeout(timer); this.batches.delete(id)
+          if (code && !this.closed) {
+            if (!this.blocked) this.drop(true)
+            this.ev.control({ t: 'err', code })
+          }
+        }
+        this.batches.set(id, finish)
+        try { this.send({ t: 'input_batch', id, data: btoa(data), egress_epoch: this.egress.epoch }) } catch { finish('unknown') }
+      } else this.ws!.send(piece)
+    }
   }
 
   /**
@@ -228,6 +279,7 @@ export class SessionLink {
     this.ready = true
     this.nodeDown = false
     this.dropping = false
+    if (this.egress) { this.pending = []; this.pendingBytes = 0; return }
     if (!this.pending.length) return
     if (Date.now() - this.pending[0].at > maxPendingAge) { this.drop(); return } // the oldest decides: all of it is at least as new
     if (this.pumpTimer !== undefined) return // a pause under way goes on as it was (复核：重挂载掐掉间隔)
@@ -280,6 +332,7 @@ export class SessionLink {
    * instead of replaying: a background tab beyond the mount limit (docs/M9 第 3 节).
    */
   detach() {
+    if (this.egress) this.setEgress({ ...this.egress, allowed: false })
     this.unknownBatches()
     clearTimeout(this.timer)
     const ws = this.ws
@@ -295,6 +348,8 @@ export class SessionLink {
   get connected() { return this.ws?.readyState === WebSocket.OPEN }
 
   close() {
+    this.closed = true
+    clearTimeout(this.egressTimer)
     this.unknownBatches()
     this.closed = true
     clearTimeout(this.timer)

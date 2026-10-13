@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { egressBlocked } from '../lib/egress'
+  import { egressClock, useEgressClock } from '../lib/egress-clock.svelte'
+  useEgressClock()
   // One past conversation, read-only (docs/M10 第 3.2 节): the latest messages
   // first, earlier ones on request; "继续这个对话" reopens it in its folder
   // with the CLI's own resume command. Nothing here starts a CLI by itself.
@@ -90,7 +93,7 @@
     {#if !app.mobile}
       <div class="acts">
         <button class="ghost" onclick={hide} data-testid="history-hide">{isHidden ? '取消隐藏' : '隐藏'}</button>
-        <button class="primary" onclick={resume} disabled={busy || (!openSid && !node?.online)} data-testid="history-resume">{openSid ? '切换到已打开的会话' : '继续这个对话'}</button>
+        <button class="primary" onclick={resume} disabled={busy || (!openSid && (!node?.online || egressBlocked(node?.egress, egressClock.now)))} data-testid="history-resume">{openSid ? '切换到已打开的会话' : '继续这个对话'}</button>
       </div>
     {/if}
   </header>
@@ -134,7 +137,7 @@
   {#if app.mobile}
     <footer>
       <button onclick={hide} data-testid="history-hide">{isHidden ? '取消隐藏' : '隐藏'}</button>
-      <button class="primary" onclick={resume} disabled={busy || (!openSid && !node?.online)} data-testid="history-resume">{openSid ? '切换到已打开的会话' : '继续这个对话'}</button>
+      <button class="primary" onclick={resume} disabled={busy || (!openSid && (!node?.online || egressBlocked(node?.egress, egressClock.now)))} data-testid="history-resume">{openSid ? '切换到已打开的会话' : '继续这个对话'}</button>
     </footer>
   {/if}
 </div>
